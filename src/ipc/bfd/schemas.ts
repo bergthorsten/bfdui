@@ -40,9 +40,15 @@ export const getTicketDevelopmentInputSchema = z.object({
   issueId: z.string().trim().min(1),
 });
 
-export const testConnectionInputSchema = z.enum([
-  "jira",
-  "github",
-  "argo",
-  "repo",
-]);
+export const connectionKindSchema = z.enum(["jira", "github", "argo", "repo"]);
+
+export const testConnectionInputSchema = z.object({
+  config: appConfigSchema.optional(),
+  kind: connectionKindSchema,
+  secrets: z
+    .object({
+      githubToken: z.string().optional(),
+      jiraToken: z.string().optional(),
+    })
+    .optional(),
+});

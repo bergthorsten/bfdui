@@ -35,10 +35,27 @@ test.beforeAll(async () => {
   });
 });
 
-test("renders the first page", async () => {
+test.afterAll(async () => {
+  await electronApp.close();
+});
+
+test("navigates primary pages", async () => {
   const page: Page = await electronApp.firstWindow();
 
-  const title = await page.waitForSelector("h1");
-  const text = await title.textContent();
-  expect(text).toBe("Dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Sprint tickets" })
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "Dev Systems" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Dev Systems" })
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sprint tickets" })
+  ).toBeVisible();
 });

@@ -101,9 +101,13 @@ export class ConfigService {
       this.clearSecret(key);
       return;
     }
-    const encrypted = safeStorage.isEncryptionAvailable()
-      ? safeStorage.encryptString(value)
-      : Buffer.from(value, "utf8");
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error(
+        "Secret storage encryption is not available on this system. Token was not saved."
+      );
+    }
+
+    const encrypted = safeStorage.encryptString(value);
     writeFileSync(this.secretPath(key), encrypted);
   }
 
@@ -115,9 +119,10 @@ export class ConfigService {
     }
     try {
       const buf = readFileSync(file);
-      return safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(buf)
-        : buf.toString("utf8");
+      if (buf.length === 0 || !safeStorage.isEncryptionAvailable()) {
+        return null;
+      }
+      return safeStorage.decryptString(buf);
     } catch (error) {
       console.error(`Failed to decrypt secret ${key}:`, error);
       return null;

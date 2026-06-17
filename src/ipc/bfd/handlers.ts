@@ -49,15 +49,17 @@ export const saveConfig = os
 export const testConnection = os
   .input(testConnectionInputSchema)
   .handler(({ input }) => {
-    switch (input) {
+    const testConfig = configProviderForTest(input);
+
+    switch (input.kind) {
       case "jira":
-        return jira.testConnection();
+        return new JiraCloudService(testConfig).testConnection();
       case "github":
-        return testGithubConnection();
+        return testGithubConnection(testConfig);
       case "argo":
-        return argo.testConnection();
+        return new ArgoService(testConfig).testConnection();
       case "repo":
-        return testRepoConnection();
+        return testRepoConnection(testConfig);
       default:
         return { ok: false, message: "Unknown connection type." };
     }
@@ -78,13 +80,40 @@ export const getTicketDevelopment = os
 
 export const getDevDeployments = os.handler(() => argo.getDevDeployments());
 
-async function testGithubConnection(): Promise<ConnectionResult> {
-  const { github } = config.get();
+type TestConfigProvider = Pick<ConfigService, "get" | "getSecret">;
+
+function configProviderForTest(input: {
+  config?: ReturnType<ConfigService["get"]>;
+  secrets?: { githubToken?: string; jiraToken?: string };
+}): TestConfigProvider {
+  if (!input.config) {
+    return config;
+  }
+
+  const secrets = input.secrets ?? {};
+  return {
+    get: () => input.config as ReturnType<ConfigService["get"]>,
+    getSecret: (key) => {
+      if (key === "githubToken" && secrets.githubToken) {
+        return secrets.githubToken;
+      }
+      if (key === "jiraToken" && secrets.jiraToken) {
+        return secrets.jiraToken;
+      }
+      return config.getSecret(key);
+    },
+  };
+}
+
+async function testGithubConnection(
+  testConfig: TestConfigProvider = config
+): Promise<ConnectionResult> {
+  const { github } = testConfig.get();
 
   try {
     const token = github.useGhCli
       ? await githubCliToken()
-      : config.getSecret("githubToken");
+      : testConfig.getSecret("githubToken");
     if (!token) {
       return {
         ok: false,
@@ -140,8 +169,10 @@ async function githubCliToken(): Promise<string | null> {
   }
 }
 
-function testRepoConnection(): ConnectionResult {
-  const repoPath = expandHome(config.get().repoPath);
+function testRepoConnection(
+  testConfig: Pick<ConfigService, "get"> = config
+): ConnectionResult {
+  const repoPath = expandHome(testConfig.get().repoPath);
   const workflowsPath = path.join(repoPath, ".github", "workflows");
 
   if (!existsSync(repoPath)) {

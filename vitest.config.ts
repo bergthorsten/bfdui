@@ -19,8 +19,27 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
-      include: ["src/**/*"],
-      exclude: [],
+      include: [
+        "src/domain/**/*.ts",
+        "src/ipc/**/*.ts",
+        "src/lib/**/*.ts",
+        "src/services/**/*.ts",
+      ],
+      exclude: ["src/routeTree.gen.ts", "src/tests/**", "src/**/*.d.ts"],
+      thresholds: {
+        "src/services/argo.ts": {
+          branches: 40,
+          functions: 40,
+          lines: 40,
+          statements: 40,
+        },
+        "src/lib/**": {
+          branches: 40,
+          functions: 40,
+          lines: 40,
+          statements: 40,
+        },
+      },
     },
   },
 });

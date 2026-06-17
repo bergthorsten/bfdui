@@ -18,23 +18,7 @@ const config: ForgeConfig = {
     new MakerRpm({}),
     new MakerDeb({}),
   ],
-  publishers: [
-    {
-      /*
-       * Publish release on GitHub as draft.
-       * Remember to manually publish it on GitHub website after verifying everything is correct.
-       */
-      name: "@electron-forge/publisher-github",
-      config: {
-        repository: {
-          owner: "LuanRoger",
-          name: "electron-shadcn",
-        },
-        draft: true,
-        prerelease: false,
-      },
-    },
-  ],
+  publishers: [],
   plugins: [
     new VitePlugin({
       build: [

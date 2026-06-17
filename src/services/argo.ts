@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { isDefaultBranch, isReservedEnvironment } from "@/domain/environments";
 import type { ConfigService } from "@/services/config";
 import type {
   ArgoAutoSync,
@@ -9,8 +10,6 @@ import type {
 
 const execFileAsync = promisify(execFile);
 
-const RESERVED_ENVIRONMENTS = new Set(["20", "epm", "oms", "sap"]);
-const DEFAULT_BRANCHES = new Set(["master", "main"]);
 const TICKET_KEY_PREFIX_PATTERN = /^([A-Z]+-[0-9]+)-/;
 
 interface ArgoApplication {
@@ -43,9 +42,9 @@ interface ArgoApplication {
 }
 
 export class ArgoService {
-  private readonly config: ConfigService;
+  private readonly config: Pick<ConfigService, "get">;
 
-  constructor(config: ConfigService) {
+  constructor(config: Pick<ConfigService, "get">) {
     this.config = config;
   }
 
@@ -107,8 +106,8 @@ export function parseArgoApplications(
 
     const branch = branchOf(parsed);
     const deployedAt = latestDeployedAt(parsed);
-    const reserved = RESERVED_ENVIRONMENTS.has(environment);
-    const isDefault = branch ? DEFAULT_BRANCHES.has(branch) : true;
+    const reserved = isReservedEnvironment(environment);
+    const isDefault = isDefaultBranch(branch);
 
     return [
       {

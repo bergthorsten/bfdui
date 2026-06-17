@@ -1,26 +1,18 @@
-import { render } from "@testing-library/react";
-import { expect, test } from "vitest";
-import ToggleTheme from "@/components/toggle-theme";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
+import { toggleTheme } from "@/actions/theme";
+import ThemeToggle from "@/components/theme-toggle";
 
-test("renders ToggleTheme", () => {
-  const { getByRole } = render(<ToggleTheme />);
-  const isButton = getByRole("button");
+vi.mock("@/actions/theme", () => ({
+  toggleTheme: vi.fn(),
+}));
 
-  expect(isButton).toBeInTheDocument();
-});
+test("toggles the theme through the app header button", async () => {
+  const user = userEvent.setup();
 
-test("has icon", () => {
-  const { getByRole } = render(<ToggleTheme />);
-  const button = getByRole("button");
-  const icon = button.querySelector("svg");
+  render(<ThemeToggle />);
+  await user.click(screen.getByRole("button", { name: "Toggle theme" }));
 
-  expect(icon).toBeInTheDocument();
-});
-
-test("is moon icon", () => {
-  const svgIconClassName: string = "lucide-moon";
-  const { getByRole } = render(<ToggleTheme />);
-  const svg = getByRole("button").querySelector("svg");
-
-  expect(svg?.classList).toContain(svgIconClassName);
+  expect(toggleTheme).toHaveBeenCalledTimes(1);
 });

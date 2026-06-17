@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { devSystemUrl } from "@/domain/urls";
 import { initialsOf } from "@/lib/status";
 import type { DevDeployment, TicketDeploymentRow } from "@/types/bfd";
 
@@ -34,8 +35,6 @@ const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
     { key: "prs", label: "PRs", className: "w-[8.5rem]" },
     { key: "deployed", label: "Deployed to", className: "w-[11rem]" },
   ];
-
-const NUMERIC_ENVIRONMENT_PATTERN = /^\d+$/;
 
 function ticketSortValue(ticketKey: string): [string, number] {
   const [project = ticketKey, number = "0"] = ticketKey.split("-");
@@ -88,13 +87,6 @@ function compareRows(
     default:
       return 0;
   }
-}
-
-function devSystemUrl(environment: string) {
-  if (NUMERIC_ENVIRONMENT_PATTERN.test(environment)) {
-    return `https://dev-${environment}.bergfreunde.de/`;
-  }
-  return `https://${environment}.bergfreunde.de/`;
 }
 
 function SortIcon({
@@ -191,6 +183,16 @@ export default function TicketsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {sortedRows.length === 0 && (
+            <TableRow>
+              <TableCell
+                className="py-8 text-center text-muted-foreground text-sm"
+                colSpan={SORTABLE_HEADERS.length + 1}
+              >
+                No sprint tickets match this search/filter.
+              </TableCell>
+            </TableRow>
+          )}
           {sortedRows.map((row) => {
             const { ticket, pullRequests, deployments } = row;
             return (

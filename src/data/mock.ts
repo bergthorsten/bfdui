@@ -1,3 +1,9 @@
+import { isDefaultBranch, isReservedEnvironment } from "@/domain/environments";
+import {
+  DEFAULT_GITHUB_REPO,
+  githubBranchUrl,
+  githubPullRequestUrl,
+} from "@/domain/urls";
 import type {
   BranchSummary,
   DevDeployment,
@@ -7,8 +13,6 @@ import type {
 } from "@/types/bfd";
 
 const JIRA_BASE = "https://bergfreunde.atlassian.net/browse";
-const GH_BASE = "https://github.com/bergfreunde/shop";
-const RESERVED = new Set(["oms", "epm", "sap", "20"]);
 const TICKET_KEY_PREFIX_PATTERN = /^([A-Z]+-[0-9]+)-/;
 
 function ticket(
@@ -281,7 +285,7 @@ function ticketKeyFromBranch(branch: string | null): string | null {
 
 export const MOCK_DEPLOYMENTS: DevDeployment[] = SEEDS.map((s) => {
   const ticketKey = ticketKeyFromBranch(s.branch);
-  const isDefault = s.branch === "master" || s.branch == null;
+  const reserved = isReservedEnvironment(s.env);
   return {
     app: "shop",
     environment: s.env,
@@ -294,8 +298,8 @@ export const MOCK_DEPLOYMENTS: DevDeployment[] = SEEDS.map((s) => {
       ? new Date(Date.now() - s.ageSeconds * 1000).toISOString()
       : null,
     ageSeconds: s.ageSeconds,
-    reserved: RESERVED.has(s.env),
-    isFree: isDefault && !RESERVED.has(s.env),
+    reserved,
+    isFree: isDefaultBranch(s.branch) && !reserved,
   };
 });
 
@@ -312,7 +316,7 @@ function pr(
     approved,
     number,
     title,
-    url: `${GH_BASE}/pull/${number}`,
+    url: githubPullRequestUrl(DEFAULT_GITHUB_REPO, number),
     headRef: branch,
     baseRef: "master",
     state,
@@ -386,7 +390,11 @@ const MOCK_PRS: Record<string, PullRequestSummary[]> = {
 };
 
 function branchSummary(name: string): BranchSummary {
-  return { name, headSha: sha(), url: `${GH_BASE}/tree/${name}` };
+  return {
+    name,
+    headSha: sha(),
+    url: githubBranchUrl(DEFAULT_GITHUB_REPO, name),
+  };
 }
 
 export const MOCK_ROWS: TicketDeploymentRow[] = MOCK_TICKETS.map((t) => {

@@ -118,9 +118,9 @@ export function categorizeStatus(status: string): JiraStatusCategory {
 }
 
 export class JiraCloudService {
-  private readonly config: ConfigService;
+  private readonly config: Pick<ConfigService, "get" | "getSecret">;
 
-  constructor(config: ConfigService) {
+  constructor(config: Pick<ConfigService, "get" | "getSecret">) {
     this.config = config;
   }
 

@@ -2,13 +2,18 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { getDevDeployments, getSprintTickets } from "@/actions/bfd";
+import {
+  getBfdConfig,
+  getDevDeployments,
+  getSprintTickets,
+} from "@/actions/bfd";
 import DevSystemsTable from "@/components/dev-systems-table";
 import PageHeader from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_GITHUB_REPO } from "@/domain/urls";
 import type { DevDeployment } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
@@ -32,6 +37,11 @@ function DevSystems() {
     queryFn: getDevDeployments,
     retry: false,
     staleTime: 30_000,
+  });
+  const configQuery = useQuery({
+    queryKey: ["bfd", "config"],
+    queryFn: getBfdConfig,
+    retry: false,
   });
   const ticketsQuery = useQuery({
     queryKey: ["bfd", "jira", "sprintTickets"],
@@ -141,6 +151,7 @@ function DevSystems() {
           <Card className="overflow-hidden">
             <DevSystemsTable
               deployments={deployments}
+              github={configQuery.data?.config.github ?? DEFAULT_GITHUB_REPO}
               ticketsByKey={ticketsByKey}
             />
           </Card>

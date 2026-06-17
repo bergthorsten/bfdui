@@ -33,6 +33,15 @@ export function saveBfdConfig(input: {
   return ipc.client.bfd.saveConfig(input);
 }
 
-export function testBfdConnection(kind: "jira" | "github" | "argo" | "repo") {
-  return ipc.client.bfd.testConnection(kind);
+export function testBfdConnection(
+  kind: "jira" | "github" | "argo" | "repo",
+  draft?: {
+    config: AppConfig;
+    secrets?: {
+      githubToken?: string;
+      jiraToken?: string;
+    };
+  }
+) {
+  return ipc.client.bfd.testConnection({ kind, ...draft });
 }

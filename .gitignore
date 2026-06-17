@@ -102,3 +102,7 @@ out/
 
 # Tanstack
 .tanstack/
+
+/plan/*
+
+AGENTS.md

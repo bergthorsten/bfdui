@@ -22,6 +22,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  environmentDisplayName,
+  isReservedEnvironment,
+  NON_PROD_ENVIRONMENTS,
+  NUMERIC_ENVIRONMENT_PATTERN,
+  RESERVED_ENVIRONMENTS,
+} from "@/domain/environments";
 import type { DevDeployment, TicketDeploymentRow } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
@@ -48,19 +55,12 @@ const WORKFLOWS = [
   },
 ] as const;
 
-const DEV_ENVIRONMENTS = Array.from({ length: 16 }, (_, index) =>
-  String(index + 1).padStart(2, "0")
-);
-const RESERVED_ENVIRONMENTS = ["20", "epm", "oms", "sap"];
-const NON_PROD_ENVIRONMENTS = [
-  ...DEV_ENVIRONMENTS,
-  ...RESERVED_ENVIRONMENTS,
-  "staging",
-];
-const NUMERIC_ENVIRONMENT_PATTERN = /^\d+$/;
-
 const SELECT_CLASS =
   "h-8 w-full appearance-none rounded-md border border-border bg-background px-2.5 pr-8 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
+
+const DEPLOYMENTS_BLOCKED = true;
+const DEPLOYMENT_BLOCKED_MESSAGE =
+  "Deployment blocker is active until all other MVP work is complete. Only remove it for the final human-run deployment validation.";
 
 interface DeploymentDialogProps {
   deployments: DevDeployment[];
@@ -87,13 +87,6 @@ function uniqueBranches(row: TicketDeploymentRow): string[] {
   ];
   const unique = [...new Set(names)];
   return unique.length > 0 ? unique : [`${row.ticket.key}-branch`];
-}
-
-function targetDisplayName(environment: string) {
-  if (NUMERIC_ENVIRONMENT_PATTERN.test(environment)) {
-    return `dev-${environment}`;
-  }
-  return environment;
 }
 
 function targetTone(
@@ -171,14 +164,14 @@ function prioritizedTargets(deployments: DevDeployment[]): TargetEnvironment[] {
 
   return NON_PROD_ENVIRONMENTS.map((environment) => {
     const deployment = deploymentsByEnv.get(environment);
-    const reserved = RESERVED_ENVIRONMENTS.includes(environment);
+    const reserved = isReservedEnvironment(environment);
     const kind = targetKind(environment, reserved);
 
     return {
       branch: deployment?.branch ?? fallbackBranch(environment),
       cliValue: environment === "staging" ? "stage" : environment,
       deployment,
-      displayName: targetDisplayName(environment),
+      displayName: environmentDisplayName(environment),
       environment,
       isFree: deployment?.isFree ?? false,
       kind,
@@ -555,6 +548,18 @@ export default function DeploymentDialog({
               </div>
             )}
 
+            {DEPLOYMENTS_BLOCKED && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive text-sm">
+                <div className="mb-1 flex items-center gap-2 font-medium">
+                  <ShieldAlert className="size-4" />
+                  Deployment blocked
+                </div>
+                <p className="text-xs leading-relaxed">
+                  {DEPLOYMENT_BLOCKED_MESSAGE}
+                </p>
+              </div>
+            )}
+
             <div className="rounded-xl border border-border p-4 text-muted-foreground text-xs leading-relaxed">
               The real action will dispatch GitHub Actions through the API and
               then poll the run URL, matching the desktop app plan.
@@ -566,9 +571,12 @@ export default function DeploymentDialog({
           <DialogClose asChild>
             <Button variant="outline">Cancel</Button>
           </DialogClose>
-          <Button>
+          <Button
+            disabled={DEPLOYMENTS_BLOCKED}
+            title={DEPLOYMENT_BLOCKED_MESSAGE}
+          >
             <Rocket />
-            Deploy
+            Deployment blocked
             <ArrowRight />
           </Button>
         </DialogFooter>

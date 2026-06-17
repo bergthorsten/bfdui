@@ -17,14 +17,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  devSystemUrl,
+  type GithubRepoRef,
+  githubBranchUrl,
+} from "@/domain/urls";
 import { formatAge } from "@/lib/status";
 import type { DevDeployment, JiraTicket } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
-const GH_BASE = "https://github.com/bergfreunde/shop";
-
 interface Props {
   deployments: DevDeployment[];
+  github: GithubRepoRef;
   ticketsByKey: Map<string, JiraTicket>;
 }
 
@@ -57,7 +61,11 @@ function DeploymentJiraStatus({
   return <span className="text-muted-foreground/60">—</span>;
 }
 
-export default function DevSystemsTable({ deployments, ticketsByKey }: Props) {
+export default function DevSystemsTable({
+  deployments,
+  github,
+  ticketsByKey,
+}: Props) {
   return (
     <Table>
       <TableHeader>
@@ -74,10 +82,21 @@ export default function DevSystemsTable({ deployments, ticketsByKey }: Props) {
         </TableRow>
       </TableHeader>
       <TableBody>
+        {deployments.length === 0 && (
+          <TableRow>
+            <TableCell
+              className="py-8 text-center text-muted-foreground text-sm"
+              colSpan={9}
+            >
+              No dev systems loaded. Check Argo settings or refresh.
+            </TableCell>
+          </TableRow>
+        )}
         {deployments.map((d) => {
           const ticket = d.ticketKey
             ? ticketsByKey.get(d.ticketKey)
             : undefined;
+          const branch = d.branch;
           return (
             <TableRow
               className={cn(d.reserved && "bg-amber-500/[0.04]")}
@@ -90,17 +109,17 @@ export default function DevSystemsTable({ deployments, ticketsByKey }: Props) {
               </TableCell>
 
               <TableCell className="w-[300px] max-w-[300px]">
-                {d.branch ? (
+                {branch ? (
                   <button
                     className="flex w-full min-w-0 items-center gap-1.5 text-left font-mono text-muted-foreground text-xs hover:text-foreground hover:underline"
                     onClick={() =>
-                      openExternalLink(`${GH_BASE}/tree/${d.branch}`)
+                      openExternalLink(githubBranchUrl(github, branch))
                     }
-                    title={d.branch}
+                    title={branch}
                     type="button"
                   >
                     <GitBranch className="size-3 shrink-0" />
-                    <span className="truncate">{d.branch}</span>
+                    <span className="truncate">{branch}</span>
                   </button>
                 ) : (
                   <span className="text-muted-foreground/60">—</span>
@@ -141,17 +160,17 @@ export default function DevSystemsTable({ deployments, ticketsByKey }: Props) {
               <TableCell>
                 <div className="flex items-center justify-end gap-1">
                   {!(d.isFree || d.reserved) && (
-                    <Button size="xs" variant="outline">
-                      <RotateCcw />
-                      Reset
-                    </Button>
+                    <span title="Reset coming soon">
+                      <Button disabled size="xs" variant="outline">
+                        <RotateCcw />
+                        Reset
+                      </Button>
+                    </span>
                   )}
                   <Button
                     aria-label="Open dev system"
                     onClick={() =>
-                      openExternalLink(
-                        `https://dev-${d.environment}.bergfreunde.de/`
-                      )
+                      openExternalLink(devSystemUrl(d.environment))
                     }
                     size="icon-xs"
                     variant="ghost"

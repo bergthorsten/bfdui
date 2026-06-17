@@ -1,6 +1,6 @@
 import path from "node:path";
 import { app, BrowserWindow } from "electron";
-import { ipcMain } from "electron/main";
+import { type IpcMainEvent, ipcMain } from "electron/main";
 import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
@@ -22,8 +22,9 @@ function createWindow() {
     webPreferences: {
       devTools: inDevelopment,
       contextIsolation: true,
-      nodeIntegration: true,
+      nodeIntegration: false,
       nodeIntegrationInSubFrames: false,
+      sandbox: true,
 
       preload,
     },
@@ -66,11 +67,42 @@ async function setupORPC() {
   const { rpcHandler } = await import("./ipc/handler");
 
   ipcMain.on(IPC_CHANNELS.START_ORPC_SERVER, (event) => {
+    if (!isTrustedRendererEvent(event)) {
+      console.warn("Rejected ORPC bootstrap from untrusted sender.");
+      return;
+    }
+
     const [serverPort] = event.ports;
+    if (!serverPort) {
+      console.warn("Rejected ORPC bootstrap without a message port.");
+      return;
+    }
 
     serverPort.start();
     rpcHandler.upgrade(serverPort);
   });
+}
+
+function isTrustedRendererEvent(event: IpcMainEvent): boolean {
+  if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) {
+    return false;
+  }
+
+  return Boolean(
+    event.senderFrame && isTrustedRendererUrl(event.senderFrame.url)
+  );
+}
+
+function isTrustedRendererUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      return url.origin === new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin;
+    }
+    return url.protocol === "file:";
+  } catch {
+    return false;
+  }
 }
 
 app.whenReady().then(async () => {

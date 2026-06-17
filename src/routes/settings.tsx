@@ -40,9 +40,14 @@ function TestButton({
   async function run() {
     setState("testing");
     setResult(null);
-    const next = await onTest();
-    setResult(next);
-    setState(next.ok ? "ok" : "error");
+    try {
+      const next = await onTest();
+      setResult(next);
+      setState(next.ok ? "ok" : "error");
+    } catch (error) {
+      setResult({ ok: false, message: messageOf(error) });
+      setState("error");
+    }
   }
 
   return (
@@ -246,9 +251,18 @@ function Settings() {
     });
   }
 
-  async function test(kind: ConnectionKind) {
-    await persist();
-    return testBfdConnection(kind);
+  function test(kind: ConnectionKind) {
+    if (!config) {
+      throw new Error("Settings have not loaded yet.");
+    }
+
+    return testBfdConnection(kind, {
+      config,
+      secrets: {
+        githubToken: githubToken.trim() || undefined,
+        jiraToken: jiraToken.trim() || undefined,
+      },
+    });
   }
 
   if (loading || !config) {

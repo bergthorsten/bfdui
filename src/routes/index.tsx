@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   CircleCheck,
   Clock,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  getBfdConfig,
   getDevDeployments,
   getSprintTickets,
   getTicketDevelopment,
@@ -143,19 +144,139 @@ function rowMatchesSprintFilter(
   return true;
 }
 
+function dashboardResultLabel({
+  jiraSearchCount,
+  jiraSearchFetching,
+  localRowsCount,
+  normalizedQuery,
+  previewMode,
+  searchedRowsCount,
+  ticketsCount,
+  ticketsError,
+}: {
+  jiraSearchCount?: number;
+  jiraSearchFetching: boolean;
+  localRowsCount: number;
+  normalizedQuery: string;
+  previewMode: boolean;
+  searchedRowsCount: number;
+  ticketsCount?: number;
+  ticketsError: unknown;
+}): string {
+  if (!normalizedQuery) {
+    if (typeof ticketsCount === "number") {
+      return `${ticketsCount} Jira tickets loaded from the configured sprint JQL.`;
+    }
+    if (previewMode) {
+      return "Preview data shown until Jira credentials are configured.";
+    }
+    if (ticketsError) {
+      return "Jira tickets could not be loaded from the configured sprint JQL.";
+    }
+    return "Loading Jira tickets from the configured sprint JQL.";
+  }
+
+  if (searchedRowsCount > 0) {
+    return `${localRowsCount} local result${localRowsCount === 1 ? "" : "s"} in the loaded sprint tickets.`;
+  }
+  if (jiraSearchFetching) {
+    return "No local match. Searching all accessible Jira tickets...";
+  }
+  if (typeof jiraSearchCount === "number") {
+    return `${jiraSearchCount} Jira result${jiraSearchCount === 1 ? "" : "s"} outside the loaded sprint result set.`;
+  }
+  return "No local match. Jira global search starts after 2 characters.";
+}
+
+function DashboardAlerts({
+  deploymentsError,
+  jiraSearchError,
+  onRetryJira,
+  previewMode,
+  shouldSearchJira,
+  showDeploymentsError,
+  ticketsError,
+}: {
+  deploymentsError: unknown;
+  jiraSearchError: unknown;
+  onRetryJira: () => void;
+  previewMode: boolean;
+  shouldSearchJira: boolean;
+  showDeploymentsError: boolean;
+  ticketsError: unknown;
+}) {
+  return (
+    <>
+      {ticketsError && previewMode && (
+        <Alert variant="warning">
+          <AlertDescription>
+            Jira tickets could not be loaded before setup is complete:{" "}
+            {messageOf(ticketsError)}. Showing preview data.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {ticketsError && !previewMode && (
+        <Alert
+          className="flex items-center justify-between gap-3"
+          variant="danger"
+        >
+          <AlertDescription>
+            Jira tickets could not be loaded: {messageOf(ticketsError)}. Live
+            sprint data is hidden until Jira works again.
+          </AlertDescription>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button onClick={onRetryJira} size="sm" variant="outline">
+              Retry Jira
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/settings">Open settings</Link>
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {jiraSearchError && shouldSearchJira && (
+        <Alert variant="warning">
+          <AlertDescription>
+            Jira global search failed: {messageOf(jiraSearchError)}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {deploymentsError && showDeploymentsError && (
+        <Alert variant="warning">
+          <AlertDescription>
+            Dev-system state could not be loaded from ArgoCD:{" "}
+            {messageOf(deploymentsError)}.
+          </AlertDescription>
+        </Alert>
+      )}
+    </>
+  );
+}
+
 function Dashboard() {
   const [filter, setFilter] = useState<SprintFilterState>(EMPTY_SPRINT_FILTER);
   const [query, setQuery] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const deferredQuery = useDeferredValue(query);
   const searchRef = useRef<HTMLInputElement>(null);
+  const configQuery = useQuery({
+    queryKey: ["bfd", "config"],
+    queryFn: getBfdConfig,
+    retry: false,
+  });
   const ticketsQuery = useQuery({
     queryKey: ["bfd", "jira", "sprintTickets"],
     queryFn: getSprintTickets,
     retry: false,
   });
-  const previewMode = !ticketsQuery.data;
-  const sprintTickets = ticketsQuery.data ?? MOCK_TICKETS;
+  const canShowPreview = configQuery.data
+    ? !configQuery.data.config.onboardingComplete
+    : false;
+  const previewMode = canShowPreview && !ticketsQuery.data;
+  const sprintTickets = ticketsQuery.data ?? (previewMode ? MOCK_TICKETS : []);
   const deploymentsQuery = useQuery({
     queryKey: ["bfd", "argo", "devDeployments"],
     queryFn: getDevDeployments,
@@ -236,7 +357,7 @@ function Dashboard() {
   );
 
   const shouldSearchJira =
-    normalizedQuery.length >= 2 && searchedRows.length === 0;
+    !previewMode && normalizedQuery.length >= 2 && searchedRows.length === 0;
   const jiraSearchQuery = useQuery({
     queryKey: ["bfd", "jira", "ticketSearch", normalizedQuery],
     queryFn: () => searchTickets(normalizedQuery),
@@ -259,23 +380,16 @@ function Dashboard() {
     filter,
   ]);
 
-  const resultLabel = (() => {
-    if (!normalizedQuery) {
-      return ticketsQuery.data
-        ? `${ticketsQuery.data.length} Jira tickets loaded from the configured sprint JQL.`
-        : "Preview data shown until Jira credentials are configured.";
-    }
-    if (searchedRows.length > 0) {
-      return `${localRows.length} local result${localRows.length === 1 ? "" : "s"} in the loaded sprint tickets.`;
-    }
-    if (jiraSearchQuery.isFetching) {
-      return "No local match. Searching all accessible Jira tickets...";
-    }
-    if (jiraSearchQuery.data) {
-      return `${jiraSearchQuery.data.length} Jira result${jiraSearchQuery.data.length === 1 ? "" : "s"} outside the loaded sprint result set.`;
-    }
-    return "No local match. Jira global search starts after 2 characters.";
-  })();
+  const resultLabel = dashboardResultLabel({
+    jiraSearchCount: jiraSearchQuery.data?.length,
+    jiraSearchFetching: jiraSearchQuery.isFetching,
+    localRowsCount: localRows.length,
+    normalizedQuery,
+    previewMode,
+    searchedRowsCount: searchedRows.length,
+    ticketsCount: ticketsQuery.data?.length,
+    ticketsError: ticketsQuery.error,
+  });
 
   const lastUpdatedAt = Math.max(
     ticketsQuery.dataUpdatedAt,
@@ -410,31 +524,15 @@ function Dashboard() {
             </div>
           </div>
 
-          {ticketsQuery.error && (
-            <Alert variant="warning">
-              <AlertDescription>
-                Jira tickets could not be loaded:{" "}
-                {messageOf(ticketsQuery.error)}. Showing preview data instead.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {jiraSearchQuery.error && shouldSearchJira && (
-            <Alert variant="warning">
-              <AlertDescription>
-                Jira global search failed: {messageOf(jiraSearchQuery.error)}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {deploymentsQuery.error && !previewMode && (
-            <Alert variant="warning">
-              <AlertDescription>
-                Dev-system state could not be loaded from ArgoCD:{" "}
-                {messageOf(deploymentsQuery.error)}.
-              </AlertDescription>
-            </Alert>
-          )}
+          <DashboardAlerts
+            deploymentsError={deploymentsQuery.error}
+            jiraSearchError={jiraSearchQuery.error}
+            onRetryJira={() => ticketsQuery.refetch()}
+            previewMode={previewMode}
+            shouldSearchJira={shouldSearchJira}
+            showDeploymentsError={!previewMode}
+            ticketsError={ticketsQuery.error}
+          />
 
           <Card className="overflow-hidden">
             <TicketsTable deployments={devDeployments} rows={rows} />
