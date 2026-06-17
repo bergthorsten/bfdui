@@ -1,4 +1,5 @@
 import {
+  checkEnvironment,
   getConfig,
   getDevDeployments,
   getSprintTickets,
@@ -9,6 +10,7 @@ import {
 } from "./handlers";
 
 export const bfd = {
+  checkEnvironment,
   getConfig,
   getDevDeployments,
   getSprintTickets,

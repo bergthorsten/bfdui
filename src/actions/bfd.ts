@@ -5,6 +5,10 @@ export function getBfdConfig() {
   return ipc.client.bfd.getConfig();
 }
 
+export function checkBfdEnvironment() {
+  return ipc.client.bfd.checkEnvironment();
+}
+
 export function getSprintTickets() {
   return ipc.client.bfd.getSprintTickets();
 }

@@ -104,6 +104,26 @@ export interface ConnectionResult {
   ok: boolean;
 }
 
+export type EnvironmentToolName = "argocd" | "gh" | "kubectl";
+
+export type EnvironmentToolStatus = "missing" | "ok" | "warning";
+
+export interface EnvironmentToolCheck {
+  authCommand?: string;
+  command: string;
+  detail?: string;
+  installCommand: string;
+  label: string;
+  message: string;
+  name: EnvironmentToolName;
+  status: EnvironmentToolStatus;
+}
+
+export interface EnvironmentCheckResult {
+  checkedAt: number;
+  tools: EnvironmentToolCheck[];
+}
+
 /** Non-secret settings, safe to render. Secrets are stored separately. */
 export interface AppConfig {
   argo: {
@@ -127,7 +147,7 @@ export interface AppConfig {
     sprintJql: string;
   };
   onboardingComplete: boolean;
-  /** Local shop checkout, used later for affected-workflow detection. */
+  /** Devenv source path, usually ~/devenv/src. */
   repoPath: string;
 }
 

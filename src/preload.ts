@@ -1,8 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS } from "./constants";
 
-contextBridge.exposeInMainWorld("bfd", {
-  startORPCServer(serverPort: MessagePort) {
-    ipcRenderer.postMessage(IPC_CHANNELS.START_ORPC_SERVER, null, [serverPort]);
-  },
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== window ||
+    event.data !== IPC_CHANNELS.START_ORPC_SERVER
+  ) {
+    return;
+  }
+
+  const [serverPort] = event.ports;
+  if (!serverPort) {
+    return;
+  }
+
+  ipcRenderer.postMessage(IPC_CHANNELS.START_ORPC_SERVER, null, [serverPort]);
 });
+
+contextBridge.exposeInMainWorld("bfd", {});

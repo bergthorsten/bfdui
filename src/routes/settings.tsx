@@ -474,18 +474,18 @@ function Settings() {
           </Section>
 
           <Section
-            description="Used later for affected-workflow detection"
+            description="Usually ~/devenv/src; BFD resolves the shop checkout inside it"
             icon={<FolderGit2 className="size-4 text-muted-foreground" />}
             testButton={
               <TestButton
                 disabled={saving}
                 onTest={() => test("repo")}
-                sectionName="Local shop checkout"
+                sectionName="Devenv path"
               />
             }
-            title="Local shop checkout"
+            title="Devenv path"
           >
-            <Field label="Repository path">
+            <Field label="Devenv source path">
               <Input
                 onChange={(event) =>
                   updateConfig({ repoPath: event.target.value })

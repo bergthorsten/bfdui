@@ -39,8 +39,33 @@ function createWindow() {
     mainWindow = null;
   });
 
-  ipcContext.setMainWindow(mainWindow);
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, code, description, url) => {
+      console.error("Renderer failed to load:", { code, description, url });
+    }
+  );
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Renderer process gone:", details);
+  });
+  mainWindow.webContents.on("unresponsive", () => {
+    console.error("Renderer became unresponsive.");
+  });
+  mainWindow.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 2) {
+      console.error("Renderer console:", message);
+    }
+  });
 
+  ipcContext.setMainWindow(mainWindow);
+}
+
+function loadMainWindow() {
+  if (!mainWindow) {
+    throw new Error("Main window has not been created.");
+  }
+
+  const basePath = getBasePath();
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
@@ -108,9 +133,10 @@ function isTrustedRendererUrl(value: string): boolean {
 app.whenReady().then(async () => {
   try {
     createWindow();
+    await setupORPC();
+    loadMainWindow();
     await installExtensions();
     checkForUpdates();
-    await setupORPC();
   } catch (error) {
     console.error("Error during app initialization:", error);
   }

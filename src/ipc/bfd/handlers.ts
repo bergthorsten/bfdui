@@ -7,7 +7,11 @@ import { os } from "@orpc/server";
 import { ArgoService } from "@/services/argo";
 import { ConfigService } from "@/services/config";
 import { JiraCloudService } from "@/services/jira";
-import type { ConnectionResult } from "@/types/bfd";
+import type {
+  ConnectionResult,
+  EnvironmentCheckResult,
+  EnvironmentToolCheck,
+} from "@/types/bfd";
 import {
   getTicketDevelopmentInputSchema,
   saveConfigInputSchema,
@@ -24,6 +28,19 @@ export const getConfig = os.handler(() => ({
   config: config.get(),
   secrets: config.secretStatus(),
 }));
+
+export const checkEnvironment = os.handler(async () => {
+  const tools = await Promise.all([
+    checkGhCli(),
+    checkArgocdCli(),
+    checkKubectlCli(),
+  ]);
+
+  return {
+    checkedAt: Date.now(),
+    tools,
+  } satisfies EnvironmentCheckResult;
+});
 
 export const saveConfig = os
   .input(saveConfigInputSchema)
@@ -169,21 +186,243 @@ async function githubCliToken(): Promise<string | null> {
   }
 }
 
+async function checkGhCli(): Promise<EnvironmentToolCheck> {
+  const version = await runCli("gh", ["--version"], 3000);
+  const base = {
+    authCommand: "gh auth login",
+    command: "gh auth status",
+    installCommand: installCommandFor("gh"),
+    label: "GitHub CLI",
+    name: "gh" as const,
+  };
+
+  if (version.missing) {
+    return {
+      ...base,
+      message: "gh is not installed.",
+      status: "missing",
+    };
+  }
+
+  const auth = await runCli("gh", ["auth", "status"], 5000);
+  if (!auth.ok) {
+    return {
+      ...base,
+      detail: firstLine(auth.output) ?? firstLine(version.output),
+      message: "Installed, but GitHub authentication is not ready.",
+      status: "warning",
+    };
+  }
+
+  return {
+    ...base,
+    detail: firstLine(auth.output) ?? firstLine(version.output),
+    message: "Installed and authenticated.",
+    status: "ok",
+  };
+}
+
+async function checkArgocdCli(): Promise<EnvironmentToolCheck> {
+  const version = await runCli("argocd", ["version", "--client"], 5000);
+  const base = {
+    authCommand: "argocd app list --core --kube-context dev",
+    command: "argocd version --client",
+    installCommand: installCommandFor("argocd"),
+    label: "ArgoCD CLI",
+    name: "argocd" as const,
+  };
+
+  if (version.missing) {
+    return {
+      ...base,
+      message: "argocd is not installed.",
+      status: "missing",
+    };
+  }
+
+  if (!version.ok) {
+    return {
+      ...base,
+      detail: firstLine(version.output),
+      message: "Installed, but the client check returned a warning.",
+      status: "warning",
+    };
+  }
+
+  return {
+    ...base,
+    detail: firstLine(version.output),
+    message: "Installed. BFD uses ArgoCD core mode.",
+    status: "ok",
+  };
+}
+
+async function checkKubectlCli(): Promise<EnvironmentToolCheck> {
+  const version = await runCli("kubectl", ["version", "--client"], 5000);
+  const base = {
+    authCommand: "kubectl config get-contexts",
+    command: "kubectl config current-context",
+    installCommand: installCommandFor("kubectl"),
+    label: "Kubernetes CLI",
+    name: "kubectl" as const,
+  };
+
+  if (version.missing) {
+    return {
+      ...base,
+      message: "kubectl is not installed.",
+      status: "missing",
+    };
+  }
+
+  const context = await runCli("kubectl", ["config", "current-context"], 5000);
+  if (!context.ok) {
+    return {
+      ...base,
+      detail: firstLine(context.output) ?? firstLine(version.output),
+      message: "Installed, but no current Kubernetes context is selected.",
+      status: "warning",
+    };
+  }
+
+  return {
+    ...base,
+    detail: `Current context: ${context.output.trim()}`,
+    message: "Installed and a context is selected.",
+    status: "ok",
+  };
+}
+
+async function runCli(
+  command: string,
+  args: string[],
+  timeout: number
+): Promise<{ missing: boolean; ok: boolean; output: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { timeout });
+    return { missing: false, ok: true, output: combineOutput(stdout, stderr) };
+  } catch (error) {
+    const candidate = error as {
+      code?: unknown;
+      stderr?: unknown;
+      stdout?: unknown;
+    };
+    return {
+      missing: candidate.code === "ENOENT",
+      ok: false,
+      output: combineOutput(candidate.stdout, candidate.stderr),
+    };
+  }
+}
+
+function combineOutput(stdout: unknown, stderr: unknown): string {
+  return [stdout, stderr]
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && Boolean(value.trim())
+    )
+    .map((value) => value.trim())
+    .join("\n");
+}
+
+function firstLine(value: string): string | undefined {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+}
+
+function installCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+  if (process.platform === "darwin") {
+    return macInstallCommandFor(command);
+  }
+  if (process.platform === "linux") {
+    return linuxInstallCommandFor(command);
+  }
+  if (process.platform === "win32") {
+    return windowsInstallCommandFor(command);
+  }
+  return `Install ${command} for your operating system, then refresh checks.`;
+}
+
+function macInstallCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+  if (command === "kubectl") {
+    return "brew install kubernetes-cli";
+  }
+  return `brew install ${command}`;
+}
+
+function linuxInstallCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+  switch (command) {
+    case "argocd":
+      return "curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && sudo install -m 555 /tmp/argocd /usr/local/bin/argocd";
+    case "gh":
+      return "sudo apt update && sudo apt install gh";
+    case "kubectl":
+      return "curl -LO https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl && sudo install -m 755 kubectl /usr/local/bin/kubectl";
+    default:
+      return `Install ${command} with your Linux package manager.`;
+  }
+}
+
+function windowsInstallCommandFor(
+  command: "argocd" | "gh" | "kubectl"
+): string {
+  switch (command) {
+    case "argocd":
+      return "winget install ArgoProject.ArgoCD";
+    case "gh":
+      return "winget install GitHub.cli";
+    case "kubectl":
+      return "winget install Kubernetes.kubectl";
+    default:
+      return `Install ${command} with your Windows package manager.`;
+  }
+}
+
 function testRepoConnection(
   testConfig: Pick<ConfigService, "get"> = config
 ): ConnectionResult {
   const repoPath = expandHome(testConfig.get().repoPath);
-  const workflowsPath = path.join(repoPath, ".github", "workflows");
+  const configuredRepoPath = path.join(repoPath, ".github", "workflows");
+  const repoNamedCheckoutPath = path.join(
+    repoPath,
+    testConfig.get().github.repo,
+    ".github",
+    "workflows"
+  );
 
   if (!existsSync(repoPath)) {
-    return { ok: false, message: "Repository path does not exist." };
+    return { ok: false, message: "Devenv path does not exist." };
   }
 
   if (!statSync(repoPath).isDirectory()) {
-    return { ok: false, message: "Repository path is not a directory." };
+    return { ok: false, message: "Devenv path is not a directory." };
   }
 
-  if (!(existsSync(workflowsPath) && statSync(workflowsPath).isDirectory())) {
+  if (
+    existsSync(configuredRepoPath) &&
+    statSync(configuredRepoPath).isDirectory()
+  ) {
+    return {
+      ok: true,
+      message: "Local checkout found.",
+      detail: configuredRepoPath,
+    };
+  }
+
+  if (
+    existsSync(repoNamedCheckoutPath) &&
+    statSync(repoNamedCheckoutPath).isDirectory()
+  ) {
+    return {
+      ok: true,
+      message: "Local checkout found inside devenv path.",
+      detail: repoNamedCheckoutPath,
+    };
+  }
+
+  if (repoPath.endsWith(path.sep + testConfig.get().github.repo)) {
     return {
       ok: false,
       message: "No .github/workflows directory found in this checkout.",
@@ -191,9 +430,8 @@ function testRepoConnection(
   }
 
   return {
-    ok: true,
-    message: "Local checkout found.",
-    detail: workflowsPath,
+    ok: false,
+    message: `No ${testConfig.get().github.repo}/.github/workflows directory found inside this devenv path.`,
   };
 }
 

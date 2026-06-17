@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: AppConfig = {
     app: "shop",
     devContext: "dev",
   },
-  repoPath: path.join(homedir(), "devenv", "src", "shop"),
+  repoPath: path.join(homedir(), "devenv", "src"),
   onboardingComplete: false,
 };
 

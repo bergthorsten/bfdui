@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   type ElectronApplication,
   _electron as electron,
@@ -6,6 +9,7 @@ import {
   test,
 } from "@playwright/test";
 import { findLatestBuild, parseElectronApp } from "electron-playwright-helpers";
+import type { AppConfig } from "@/types/bfd";
 
 /*
  * Using Playwright with Electron:
@@ -13,14 +17,43 @@ import { findLatestBuild, parseElectronApp } from "electron-playwright-helpers";
  */
 
 let electronApp: ElectronApplication;
+let userDataDir: string;
 
-test.beforeAll(async () => {
+const CONTINUE_TO_ACCOUNTS = /continue to accounts/i;
+
+const E2E_CONFIG: AppConfig = {
+  argo: {
+    app: "shop",
+    devContext: "dev",
+  },
+  github: {
+    owner: "bergfreunde",
+    repo: "shop",
+    useGhCli: false,
+  },
+  jira: {
+    baseUrl: "https://jirabergfreunde.atlassian.net",
+    email: "",
+    project: "PC",
+    sprintJql: "sprint in openSprints() AND project = PC ORDER BY rank ASC",
+  },
+  onboardingComplete: false,
+  repoPath: "~/devenv/src",
+};
+
+test.beforeEach(async () => {
   const latestBuild = findLatestBuild();
   const appInfo = parseElectronApp(latestBuild);
-  process.env.CI = "e2e";
+  userDataDir = mkdtempSync(path.join(tmpdir(), "bfd-e2e-"));
+  writeFileSync(
+    path.join(userDataDir, "bfd-config.json"),
+    JSON.stringify(E2E_CONFIG, null, 2),
+    "utf8"
+  );
 
   electronApp = await electron.launch({
-    args: [appInfo.main],
+    args: [appInfo.main, `--user-data-dir=${userDataDir}`],
+    env: { ...process.env, CI: "e2e" },
   });
   electronApp.on("window", (page) => {
     const filename = page.url()?.split("/").pop();
@@ -35,12 +68,23 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(async () => {
+test.afterEach(async () => {
   await electronApp.close();
+  rmSync(userDataDir, { force: true, recursive: true });
 });
 
+async function firstWindow() {
+  const page = await electronApp.firstWindow();
+  await expect(
+    page.getByRole("heading", { name: "System check & workspace" })
+  ).toBeVisible();
+  return page;
+}
+
 test("navigates primary pages", async () => {
-  const page: Page = await electronApp.firstWindow();
+  const page: Page = await firstWindow();
+
+  await page.getByRole("button", { name: "Skip setup" }).click();
 
   await expect(
     page.getByRole("heading", { name: "Sprint tickets" })
@@ -57,5 +101,42 @@ test("navigates primary pages", async () => {
   await page.getByRole("link", { name: "Dashboard" }).click();
   await expect(
     page.getByRole("heading", { name: "Sprint tickets" })
+  ).toBeVisible();
+});
+
+test("onboarding manual test buttons show results", async () => {
+  const page: Page = await firstWindow();
+
+  await page
+    .locator("input")
+    .nth(2)
+    .fill(path.join(userDataDir, "missing-src"));
+  await page.getByRole("button", { name: "Test path" }).click();
+  await expect(page.getByTestId("connection-result-repo")).toBeVisible();
+  await expect(
+    page.getByText("Devenv path does not exist.", { exact: true })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Test ArgoCD" }).click();
+  await expect(page.getByTestId("connection-result-argo")).toBeVisible({
+    timeout: 25_000,
+  });
+
+  await page.getByRole("button", { name: CONTINUE_TO_ACCOUNTS }).click();
+
+  await page.getByRole("button", { name: "Test Jira" }).click();
+  await expect(page.getByTestId("connection-result-jira")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("connection-result-jira")
+      .getByText("No Jira email configured.", { exact: true })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Test GitHub" }).click();
+  await expect(page.getByTestId("connection-result-github")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("connection-result-github")
+      .getByText("No GitHub token configured.", { exact: true })
   ).toBeVisible();
 });
