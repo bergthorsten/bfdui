@@ -9,9 +9,17 @@ import {
   Server,
   TriangleAlert,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   getBfdConfig,
+  getDeploymentBatches,
   getDevDeployments,
   getSprintTickets,
   getTicketDevelopment,
@@ -30,8 +38,11 @@ import {
   MOCK_PIPELINE_FAILURES,
   MOCK_TICKETS,
 } from "@/data/mock";
+import { DEFAULT_GITHUB_REPO } from "@/domain/urls";
 import type {
+  DeploymentBatch,
   DevDeployment,
+  IntegrationStatus,
   JiraDevelopmentInfo,
   JiraTicket,
   TicketDeploymentRow,
@@ -41,6 +52,12 @@ import { cn } from "@/utils/tailwind";
 const SHOW_STAT_CARDS = false;
 const JIRA_DEVELOPMENT_CACHE_MS = 10 * 60_000;
 const DASHBOARD_UPDATED_LABEL_INTERVAL_MS = 30_000;
+const TERMINAL_DEPLOYMENT_STATES = new Set([
+  "cancelled",
+  "failure",
+  "success",
+  "timed-out",
+]);
 
 type SprintFilter = "hide-closed" | "hide-open";
 
@@ -63,7 +80,9 @@ function rowsForTickets(
   tickets: JiraTicket[],
   options: {
     developmentByKey?: Map<string, JiraDevelopmentInfo>;
+    developmentStatusByKey?: Map<string, IntegrationStatus>;
     deployments?: DevDeployment[];
+    devSystemStatus?: IntegrationStatus;
     includeMockDeployments?: boolean;
   } = {}
 ): TicketDeploymentRow[] {
@@ -72,7 +91,9 @@ function rowsForTickets(
     return {
       ticket,
       branches: development?.branches ?? [],
+      developmentStatus: options.developmentStatusByKey?.get(ticket.key),
       pullRequests: development?.pullRequests ?? [],
+      devSystemStatus: options.devSystemStatus,
       deployments: (options.includeMockDeployments
         ? MOCK_DEPLOYMENTS
         : (options.deployments ?? [])
@@ -108,13 +129,16 @@ function dashboardUpdatedLabel({
   lastUpdatedAt,
   now,
   previewMode,
+  refreshingCachedData,
 }: {
   lastUpdatedAt: number;
   now: number;
   previewMode: boolean;
+  refreshingCachedData: boolean;
 }): string {
   if (lastUpdatedAt) {
-    return formatRelativeUpdate(lastUpdatedAt, now);
+    const age = formatRelativeUpdate(lastUpdatedAt, now);
+    return refreshingCachedData ? `cached ${age} · refreshing` : age;
   }
   if (previewMode) {
     return "preview data";
@@ -153,6 +177,7 @@ function dashboardResultLabel({
   searchedRowsCount,
   ticketsCount,
   ticketsError,
+  ticketsFetching,
 }: {
   jiraSearchCount?: number;
   jiraSearchFetching: boolean;
@@ -162,9 +187,13 @@ function dashboardResultLabel({
   searchedRowsCount: number;
   ticketsCount?: number;
   ticketsError: unknown;
+  ticketsFetching: boolean;
 }): string {
   if (!normalizedQuery) {
     if (typeof ticketsCount === "number") {
+      if (ticketsFetching) {
+        return `${ticketsCount} Jira tickets loaded from cache while the configured sprint JQL refreshes.`;
+      }
       return `${ticketsCount} Jira tickets loaded from the configured sprint JQL.`;
     }
     if (previewMode) {
@@ -186,6 +215,178 @@ function dashboardResultLabel({
     return `${jiraSearchCount} Jira result${jiraSearchCount === 1 ? "" : "s"} outside the loaded sprint result set.`;
   }
   return "No local match. Jira global search starts after 2 characters.";
+}
+
+function dashboardEmptyMessage({
+  jiraSearchFetching,
+  normalizedQuery,
+  previewMode,
+  shouldSearchJira,
+  ticketsError,
+  ticketsFetching,
+}: {
+  jiraSearchFetching: boolean;
+  normalizedQuery: string;
+  previewMode: boolean;
+  shouldSearchJira: boolean;
+  ticketsError: unknown;
+  ticketsFetching: boolean;
+}): string {
+  if (ticketsFetching && !previewMode && !normalizedQuery) {
+    return "Loading Jira sprint tickets from the configured sprint JQL...";
+  }
+  if (ticketsError && !previewMode) {
+    return "No live sprint tickets are shown because Jira failed. Retry Jira or open settings.";
+  }
+  if (shouldSearchJira && jiraSearchFetching) {
+    return "Searching all accessible Jira tickets because nothing matched the loaded sprint.";
+  }
+  if (shouldSearchJira) {
+    return "No Jira tickets matched globally. Try a ticket key or broader search text.";
+  }
+  if (previewMode) {
+    return "No preview tickets match this search/filter.";
+  }
+  return "No sprint tickets match this search/filter.";
+}
+
+function integrationStatusFromDevelopmentQuery(queryResult: {
+  data?: JiraDevelopmentInfo;
+  error: unknown;
+  isFetching: boolean;
+  isLoading: boolean;
+}): IntegrationStatus {
+  if (queryResult.data && queryResult.isFetching) {
+    return {
+      kind: "refreshing",
+      message:
+        "Showing cached Jira dev-status and GitHub PR data while refreshing.",
+    };
+  }
+  if (queryResult.isLoading || queryResult.isFetching) {
+    return {
+      kind: "loading",
+      message:
+        "Loading Jira dev-status and GitHub PR discovery for this ticket.",
+    };
+  }
+  if (queryResult.error) {
+    return {
+      kind: "error",
+      message: `Jira dev-status/GitHub PR data failed: ${messageOf(queryResult.error)}`,
+    };
+  }
+  if (queryResult.data?.errors.length) {
+    return {
+      kind: "warning",
+      message: `Partial development data: ${queryResult.data.errors.join("; ")}`,
+    };
+  }
+  if (queryResult.data) {
+    return {
+      kind: "ok",
+      message: "Jira dev-status and GitHub PR data loaded.",
+    };
+  }
+  return {
+    kind: "idle",
+    message: "Development data has not been requested for this row.",
+  };
+}
+
+function integrationStatusFromDevSystemsQuery(queryResult: {
+  data?: DevDeployment[];
+  error: unknown;
+  isFetching: boolean;
+  isLoading: boolean;
+}): IntegrationStatus {
+  if (queryResult.data && queryResult.isFetching) {
+    return {
+      kind: "refreshing",
+      message: "Showing cached dev-system state while ArgoCD refreshes.",
+    };
+  }
+  if (queryResult.isLoading || queryResult.isFetching) {
+    return {
+      kind: "loading",
+      message: "Loading dev-system state from ArgoCD.",
+    };
+  }
+  if (queryResult.error) {
+    return {
+      kind: "error",
+      message: `ArgoCD dev-system state failed: ${messageOf(queryResult.error)}`,
+    };
+  }
+  if (queryResult.data) {
+    return { kind: "ok", message: "ArgoCD dev-system state loaded." };
+  }
+  return { kind: "idle", message: "Dev-system state has not loaded yet." };
+}
+
+function developmentStateForTickets(
+  tickets: JiraTicket[],
+  queryResults: Array<{
+    data?: JiraDevelopmentInfo;
+    error: unknown;
+    isFetching: boolean;
+    isLoading: boolean;
+  }>,
+  hasLiveTickets: boolean
+): {
+  developmentByKey: Map<string, JiraDevelopmentInfo>;
+  developmentStatusByKey: Map<string, IntegrationStatus>;
+} {
+  const developmentByKey = new Map<string, JiraDevelopmentInfo>();
+  const developmentStatusByKey = new Map<string, IntegrationStatus>();
+
+  for (const [index, queryResult] of queryResults.entries()) {
+    const ticket = tickets[index];
+    if (!ticket) {
+      continue;
+    }
+    if (queryResult.data) {
+      developmentByKey.set(ticket.key, queryResult.data);
+    }
+    if (hasLiveTickets) {
+      developmentStatusByKey.set(
+        ticket.key,
+        integrationStatusFromDevelopmentQuery(queryResult)
+      );
+    }
+  }
+
+  return { developmentByKey, developmentStatusByKey };
+}
+
+function refetchDevelopmentQueries(
+  queryResults: Array<{ refetch: () => Promise<unknown> }>
+): void {
+  for (const queryResult of queryResults) {
+    queryResult.refetch();
+  }
+}
+
+function githubFallbackDifferenceCount(
+  developmentByKey: Map<string, JiraDevelopmentInfo>
+): number {
+  return [...developmentByKey.values()].reduce(
+    (count, info) =>
+      count +
+      info.branches.filter((branch) => branch.source === "github").length +
+      info.pullRequests.filter((pr) => pr.source === "github").length,
+    0
+  );
+}
+
+function hasActiveDeploymentBatches(
+  batches: DeploymentBatch[] | undefined
+): boolean {
+  return Boolean(
+    batches?.some(
+      (batch) => !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState)
+    )
+  );
 }
 
 function DashboardAlerts({
@@ -256,6 +457,145 @@ function DashboardAlerts({
   );
 }
 
+function DashboardStats({
+  freeCount,
+  occupiedCount,
+}: {
+  freeCount: number;
+  occupiedCount: number;
+}) {
+  if (!SHOW_STAT_CARDS) {
+    return null;
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <StatCard
+        hint="ready to deploy"
+        icon={CircleCheck}
+        label="Free systems"
+        tone="success"
+        value={freeCount}
+      />
+      <StatCard
+        icon={Server}
+        label="Occupied systems"
+        tone="info"
+        value={occupiedCount}
+      />
+      <StatCard
+        hint="needs attention"
+        icon={TriangleAlert}
+        label="Pipeline failures"
+        tone={MOCK_PIPELINE_FAILURES > 0 ? "danger" : "default"}
+        value={MOCK_PIPELINE_FAILURES}
+      />
+      <StatCard
+        hint="new commits available"
+        icon={Clock}
+        label="Outdated deploys"
+        tone={MOCK_OUTDATED > 0 ? "warning" : "default"}
+        value={MOCK_OUTDATED}
+      />
+    </div>
+  );
+}
+
+function DashboardHeaderActions({
+  isRefreshing,
+  onRefresh,
+  updatedLabel,
+}: {
+  isRefreshing: boolean;
+  onRefresh: () => void;
+  updatedLabel: string;
+}) {
+  return (
+    <>
+      <span className="whitespace-nowrap text-muted-foreground text-xs">
+        Updated at: {updatedLabel}
+      </span>
+      <Button
+        disabled={isRefreshing}
+        onClick={onRefresh}
+        size="sm"
+        variant="outline"
+      >
+        {isRefreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+        Refresh data
+      </Button>
+    </>
+  );
+}
+
+function DashboardControls({
+  allFilterActive,
+  filter,
+  jiraSearchFetching,
+  onQueryChange,
+  onResetFilter,
+  onToggleFilter,
+  query,
+  searchRef,
+}: {
+  allFilterActive: boolean;
+  filter: SprintFilterState;
+  jiraSearchFetching: boolean;
+  onQueryChange: (value: string) => void;
+  onResetFilter: () => void;
+  onToggleFilter: (key: SprintFilter) => void;
+  query: string;
+  searchRef: RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5 shadow-xs">
+        <button
+          className={cn(
+            "rounded-md px-2.5 py-1 font-medium text-xs transition-colors",
+            allFilterActive
+              ? "bg-secondary text-secondary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+          onClick={onResetFilter}
+          type="button"
+        >
+          All
+        </button>
+        {SPRINT_FILTERS.map((option) => (
+          <button
+            className={cn(
+              "rounded-md px-2.5 py-1 font-medium text-xs transition-colors",
+              (option.key === "hide-open" ? filter.hideOpen : filter.hideClosed)
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            key={option.key}
+            onClick={() => onToggleFilter(option.key)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <div className="relative w-80">
+        {jiraSearchFetching ? (
+          <Loader2 className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+        ) : (
+          <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        )}
+        <Input
+          className="pl-8"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search ticket or topic..."
+          ref={searchRef}
+          value={query}
+        />
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const [filter, setFilter] = useState<SprintFilterState>(EMPTY_SPRINT_FILTER);
   const [query, setQuery] = useState("");
@@ -283,11 +623,19 @@ function Dashboard() {
     retry: false,
     staleTime: 30_000,
   });
+  const deploymentBatchesQuery = useQuery({
+    queryKey: ["bfd", "deployments"],
+    queryFn: getDeploymentBatches,
+    refetchInterval: (query) =>
+      hasActiveDeploymentBatches(query.state.data) ? 5000 : false,
+    retry: false,
+  });
   const devDeployments = deploymentsQuery.data ?? [];
   const developmentQueries = useQueries({
     queries: sprintTickets.map((ticket) => ({
       queryKey: ["bfd", "jira", "development", ticket.id],
-      queryFn: () => getTicketDevelopment(ticket.id),
+      queryFn: () =>
+        getTicketDevelopment({ issueId: ticket.id, ticketKey: ticket.key }),
       enabled: Boolean(ticketsQuery.data && ticket.id),
       retry: false,
       staleTime: JIRA_DEVELOPMENT_CACHE_MS,
@@ -325,17 +673,23 @@ function Dashboard() {
     return () => window.clearInterval(id);
   }, []);
 
-  const developmentByKey = new Map<string, JiraDevelopmentInfo>();
-  for (const [index, queryResult] of developmentQueries.entries()) {
-    const ticket = sprintTickets[index];
-    if (ticket && queryResult.data) {
-      developmentByKey.set(ticket.key, queryResult.data);
-    }
-  }
+  const { developmentByKey, developmentStatusByKey } =
+    developmentStateForTickets(
+      sprintTickets,
+      developmentQueries,
+      Boolean(ticketsQuery.data)
+    );
+  const fallbackDifferenceCount =
+    githubFallbackDifferenceCount(developmentByKey);
+  const devSystemStatus = previewMode
+    ? undefined
+    : integrationStatusFromDevSystemsQuery(deploymentsQuery);
 
   const allRows = rowsForTickets(sprintTickets, {
     developmentByKey,
+    developmentStatusByKey,
     deployments: devDeployments,
+    devSystemStatus,
     includeMockDeployments: previewMode,
   });
 
@@ -369,6 +723,7 @@ function Dashboard() {
     if (shouldSearchJira && jiraSearchQuery.data) {
       return rowsForTickets(jiraSearchQuery.data, {
         deployments: devDeployments,
+        devSystemStatus,
       }).filter((row) => rowMatchesSprintFilter(row, filter));
     }
     return localRows;
@@ -377,6 +732,7 @@ function Dashboard() {
     jiraSearchQuery.data,
     localRows,
     devDeployments,
+    devSystemStatus,
     filter,
   ]);
 
@@ -389,17 +745,34 @@ function Dashboard() {
     searchedRowsCount: searchedRows.length,
     ticketsCount: ticketsQuery.data?.length,
     ticketsError: ticketsQuery.error,
+    ticketsFetching: ticketsQuery.isFetching,
+  });
+  const emptyMessage = dashboardEmptyMessage({
+    jiraSearchFetching: jiraSearchQuery.isFetching,
+    normalizedQuery,
+    previewMode,
+    shouldSearchJira,
+    ticketsError: ticketsQuery.error,
+    ticketsFetching: ticketsQuery.isFetching,
   });
 
   const lastUpdatedAt = Math.max(
     ticketsQuery.dataUpdatedAt,
     deploymentsQuery.dataUpdatedAt,
+    deploymentBatchesQuery.dataUpdatedAt,
     ...developmentQueries.map((queryResult) => queryResult.dataUpdatedAt)
   );
   const updatedLabel = dashboardUpdatedLabel({
     lastUpdatedAt,
     now,
     previewMode,
+    refreshingCachedData:
+      (ticketsQuery.data && ticketsQuery.isFetching) ||
+      (deploymentsQuery.data && deploymentsQuery.isFetching) ||
+      (deploymentBatchesQuery.data && deploymentBatchesQuery.isFetching) ||
+      developmentQueries.some(
+        (queryResult) => queryResult.data && queryResult.isFetching
+      ),
   });
   const allFilterActive = !(filter.hideOpen || filter.hideClosed);
 
@@ -412,117 +785,55 @@ function Dashboard() {
   }
 
   async function refreshJira() {
-    await Promise.all([ticketsQuery.refetch(), deploymentsQuery.refetch()]);
-    for (const queryResult of developmentQueries) {
-      queryResult.refetch();
-    }
+    await Promise.all([
+      ticketsQuery.refetch(),
+      deploymentsQuery.refetch(),
+      deploymentBatchesQuery.refetch(),
+    ]);
+    refetchDevelopmentQueries(developmentQueries);
   }
 
   return (
     <>
       <PageHeader
         actions={
-          <>
-            <span className="whitespace-nowrap text-muted-foreground text-xs">
-              Updated at: {updatedLabel}
-            </span>
-            <Button
-              disabled={ticketsQuery.isFetching || deploymentsQuery.isFetching}
-              onClick={refreshJira}
-              size="sm"
-              variant="outline"
-            >
-              {ticketsQuery.isFetching || deploymentsQuery.isFetching ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <RefreshCw />
-              )}
-              Refresh data
-            </Button>
-          </>
+          <DashboardHeaderActions
+            isRefreshing={
+              ticketsQuery.isFetching ||
+              deploymentsQuery.isFetching ||
+              deploymentBatchesQuery.isFetching
+            }
+            onRefresh={refreshJira}
+            updatedLabel={updatedLabel}
+          />
         }
         description={resultLabel}
         title="Sprint tickets"
       />
       <div className="flex min-h-0 flex-1 items-start overflow-auto">
         <div className="mx-auto flex w-full min-w-[72rem] max-w-[1480px] shrink-0 flex-col gap-5 p-6 pb-24">
-          {SHOW_STAT_CARDS && (
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <StatCard
-                hint="ready to deploy"
-                icon={CircleCheck}
-                label="Free systems"
-                tone="success"
-                value={freeCount}
-              />
-              <StatCard
-                icon={Server}
-                label="Occupied systems"
-                tone="info"
-                value={occupiedCount}
-              />
-              <StatCard
-                hint="needs attention"
-                icon={TriangleAlert}
-                label="Pipeline failures"
-                tone={MOCK_PIPELINE_FAILURES > 0 ? "danger" : "default"}
-                value={MOCK_PIPELINE_FAILURES}
-              />
-              <StatCard
-                hint="new commits available"
-                icon={Clock}
-                label="Outdated deploys"
-                tone={MOCK_OUTDATED > 0 ? "warning" : "default"}
-                value={MOCK_OUTDATED}
-              />
-            </div>
-          )}
+          <DashboardStats freeCount={freeCount} occupiedCount={occupiedCount} />
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5 shadow-xs">
-              <button
-                className={cn(
-                  "rounded-md px-2.5 py-1 font-medium text-xs transition-colors",
-                  allFilterActive
-                    ? "bg-secondary text-secondary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setFilter(EMPTY_SPRINT_FILTER)}
-                type="button"
-              >
-                All
-              </button>
-              {SPRINT_FILTERS.map((option) => (
-                <button
-                  className={cn(
-                    "rounded-md px-2.5 py-1 font-medium text-xs transition-colors",
-                    (
-                      option.key === "hide-open"
-                        ? filter.hideOpen
-                        : filter.hideClosed
-                    )
-                      ? "bg-secondary text-secondary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  key={option.key}
-                  onClick={() => toggleSprintFilter(option.key)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div className="relative w-80">
-              <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search ticket or topic..."
-                ref={searchRef}
-                value={query}
-              />
-            </div>
-          </div>
+          <DashboardControls
+            allFilterActive={allFilterActive}
+            filter={filter}
+            jiraSearchFetching={jiraSearchQuery.isFetching}
+            onQueryChange={setQuery}
+            onResetFilter={() => setFilter(EMPTY_SPRINT_FILTER)}
+            onToggleFilter={toggleSprintFilter}
+            query={query}
+            searchRef={searchRef}
+          />
+
+          {fallbackDifferenceCount > 3 && (
+            <Alert variant="warning">
+              <AlertDescription>
+                GitHub fallback found {fallbackDifferenceCount} PR/branch items
+                that Jira dev-status did not provide. Jira remains primary;
+                check Jira development links if this keeps happening.
+              </AlertDescription>
+            </Alert>
+          )}
 
           <DashboardAlerts
             deploymentsError={deploymentsQuery.error}
@@ -535,7 +846,13 @@ function Dashboard() {
           />
 
           <Card className="overflow-hidden">
-            <TicketsTable deployments={devDeployments} rows={rows} />
+            <TicketsTable
+              deploymentBatches={deploymentBatchesQuery.data ?? []}
+              deployments={devDeployments}
+              emptyMessage={emptyMessage}
+              github={configQuery.data?.config.github ?? DEFAULT_GITHUB_REPO}
+              rows={rows}
+            />
           </Card>
         </div>
       </div>

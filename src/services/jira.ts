@@ -452,6 +452,7 @@ function branchToSummary(branch: DevStatusBranch): BranchSummary[] {
   return [
     {
       name: branch.name,
+      source: "jira",
       url: branch.url,
       headSha: branch.lastCommit?.id ?? "",
     },
@@ -477,6 +478,7 @@ function pullRequestToSummary(
       isDraft: false,
       approved: pullRequestApproved(pullRequest.status),
       headSha: pullRequest.lastCommit?.id ?? null,
+      source: "jira",
     },
   ];
 }

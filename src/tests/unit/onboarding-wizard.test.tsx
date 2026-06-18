@@ -56,6 +56,12 @@ const emptySecrets: SecretStatus = {
   jiraToken: false,
 };
 
+type EnvironmentToolChecks = [
+  EnvironmentToolCheck,
+  EnvironmentToolCheck,
+  EnvironmentToolCheck,
+];
+
 function tool(
   name: EnvironmentToolCheck["name"],
   status: EnvironmentToolStatus
@@ -84,7 +90,7 @@ function renderOnboarding({
   config?: AppConfig;
   secrets?: SecretStatus;
   strictMode?: boolean;
-  tools?: EnvironmentToolCheck[];
+  tools?: EnvironmentToolChecks;
 } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {

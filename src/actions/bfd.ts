@@ -1,5 +1,9 @@
 import { ipc } from "@/ipc/manager";
-import type { AppConfig } from "@/types/bfd";
+import type {
+  AppConfig,
+  DeploymentIntentInput,
+  WorkflowTargetUsageInput,
+} from "@/types/bfd";
 
 export function getBfdConfig() {
   return ipc.client.bfd.getConfig();
@@ -17,8 +21,15 @@ export function getDevDeployments() {
   return ipc.client.bfd.getDevDeployments();
 }
 
-export function getTicketDevelopment(issueId: string) {
-  return ipc.client.bfd.getTicketDevelopment({ issueId });
+export function getWorkflowTargets() {
+  return ipc.client.bfd.getWorkflowTargets();
+}
+
+export function getTicketDevelopment(input: {
+  issueId: string;
+  ticketKey: string;
+}) {
+  return ipc.client.bfd.getTicketDevelopment(input);
 }
 
 export function searchTickets(query: string) {
@@ -35,6 +46,26 @@ export function saveBfdConfig(input: {
   };
 }) {
   return ipc.client.bfd.saveConfig(input);
+}
+
+export function recordWorkflowTargetUsage(input: WorkflowTargetUsageInput) {
+  return ipc.client.bfd.recordWorkflowTargetUsage(input);
+}
+
+export function createDeployment(input: DeploymentIntentInput) {
+  return ipc.client.bfd.createDeployment(input);
+}
+
+export function getDeploymentBatches() {
+  return ipc.client.bfd.getDeploymentBatches();
+}
+
+export function getDeploymentBatch(id: string) {
+  return ipc.client.bfd.getDeploymentBatch({ id });
+}
+
+export function refreshDeploymentBatch(id: string) {
+  return ipc.client.bfd.refreshDeploymentBatch({ id });
 }
 
 export function testBfdConnection(

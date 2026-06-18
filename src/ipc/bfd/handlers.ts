@@ -6,14 +6,21 @@ import { promisify } from "node:util";
 import { os } from "@orpc/server";
 import { ArgoService } from "@/services/argo";
 import { ConfigService } from "@/services/config";
+import { DeploymentService } from "@/services/deployments";
+import { GitHubService } from "@/services/github";
 import { JiraCloudService } from "@/services/jira";
+import { WorkflowService } from "@/services/workflows";
 import type {
   ConnectionResult,
+  DeploymentBatch,
   EnvironmentCheckResult,
   EnvironmentToolCheck,
 } from "@/types/bfd";
 import {
+  createDeploymentInputSchema,
+  deploymentBatchInputSchema,
   getTicketDevelopmentInputSchema,
+  recordWorkflowTargetUsageInputSchema,
   saveConfigInputSchema,
   searchTicketsInputSchema,
   testConnectionInputSchema,
@@ -22,7 +29,16 @@ import {
 const execFileAsync = promisify(execFile);
 const config = new ConfigService();
 const argo = new ArgoService(config);
+const github = new GitHubService(config);
 const jira = new JiraCloudService(config);
+const workflows = new WorkflowService(config);
+const deployments = new DeploymentService(github, workflows);
+const TERMINAL_DEPLOYMENT_STATES = new Set([
+  "cancelled",
+  "failure",
+  "success",
+  "timed-out",
+]);
 
 export const getConfig = os.handler(() => ({
   config: config.get(),
@@ -72,7 +88,7 @@ export const testConnection = os
       case "jira":
         return new JiraCloudService(testConfig).testConnection();
       case "github":
-        return testGithubConnection(testConfig);
+        return new GitHubService(testConfig).testConnection();
       case "argo":
         return new ArgoService(testConfig).testConnection();
       case "repo":
@@ -93,11 +109,48 @@ export const searchTickets = os
 
 export const getTicketDevelopment = os
   .input(getTicketDevelopmentInputSchema)
-  .handler(({ input }) => jira.getDevelopmentInfo(input.issueId));
+  .handler(async ({ input }) => {
+    const developmentInfo = await jira.getDevelopmentInfo(input.issueId);
+    return github.completeDevelopmentInfo(input.ticketKey, developmentInfo);
+  });
 
 export const getDevDeployments = os.handler(() => argo.getDevDeployments());
 
+export const getWorkflowTargets = os.handler(() => workflows.discoverTargets());
+
+export const recordWorkflowTargetUsage = os
+  .input(recordWorkflowTargetUsageInputSchema)
+  .handler(({ input }) => workflows.recordUsage(input));
+
+export const createDeployment = os
+  .input(createDeploymentInputSchema)
+  .handler(({ input }) => deployments.createDeployment(input));
+
+export const getDeploymentBatches = os.handler(async () => {
+  const batches = deployments.listDeploymentBatches();
+  await Promise.all(
+    batches
+      .filter(isActiveDeploymentBatch)
+      .map((batch) =>
+        deployments.refreshDeploymentBatch(batch.id).catch(() => batch)
+      )
+  );
+  return deployments.listDeploymentBatches();
+});
+
+export const getDeploymentBatch = os
+  .input(deploymentBatchInputSchema)
+  .handler(({ input }) => deployments.getDeploymentBatch(input.id));
+
+export const refreshDeploymentBatch = os
+  .input(deploymentBatchInputSchema)
+  .handler(({ input }) => deployments.refreshDeploymentBatch(input.id));
+
 type TestConfigProvider = Pick<ConfigService, "get" | "getSecret">;
+
+function isActiveDeploymentBatch(batch: DeploymentBatch): boolean {
+  return !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState);
+}
 
 function configProviderForTest(input: {
   config?: ReturnType<ConfigService["get"]>;
@@ -120,70 +173,6 @@ function configProviderForTest(input: {
       return config.getSecret(key);
     },
   };
-}
-
-async function testGithubConnection(
-  testConfig: TestConfigProvider = config
-): Promise<ConnectionResult> {
-  const { github } = testConfig.get();
-
-  try {
-    const token = github.useGhCli
-      ? await githubCliToken()
-      : testConfig.getSecret("githubToken");
-    if (!token) {
-      return {
-        ok: false,
-        message: github.useGhCli
-          ? "No GitHub token found via gh CLI."
-          : "No GitHub token configured.",
-      };
-    }
-
-    const res = await fetch(
-      `https://api.github.com/repos/${github.owner}/${github.repo}`,
-      {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${token}`,
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
-      }
-    );
-
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, message: "GitHub authentication failed." };
-    }
-    if (res.status === 404) {
-      return { ok: false, message: "GitHub repository was not found." };
-    }
-    if (!res.ok) {
-      return { ok: false, message: `GitHub returned HTTP ${res.status}.` };
-    }
-
-    const repo = (await res.json()) as {
-      default_branch?: string;
-      full_name?: string;
-    };
-    return {
-      ok: true,
-      message: "Connected to GitHub.",
-      detail: `${repo.full_name ?? `${github.owner}/${github.repo}`} · ${repo.default_branch ?? "default branch unknown"}`,
-    };
-  } catch (error) {
-    return { ok: false, message: messageOf(error) };
-  }
-}
-
-async function githubCliToken(): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("gh", ["auth", "token"], {
-      timeout: 5000,
-    });
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
 }
 
 async function checkGhCli(): Promise<EnvironmentToolCheck> {
@@ -443,8 +432,4 @@ function expandHome(value: string): string {
     return path.join(homedir(), value.slice(2));
   }
   return value;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

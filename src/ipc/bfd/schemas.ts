@@ -38,6 +38,32 @@ export const searchTicketsInputSchema = z.object({
 
 export const getTicketDevelopmentInputSchema = z.object({
   issueId: z.string().trim().min(1),
+  ticketKey: z.string().trim().min(1),
+});
+
+export const recordWorkflowTargetUsageInputSchema = z.object({
+  branch: z.string().trim().min(1).optional(),
+  environment: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1),
+  ticketKey: z.string().trim().min(1).optional(),
+});
+
+export const deploymentWorkflowInputSchema = z.object({
+  inputs: z.record(z.string(), z.string()),
+  name: z.string().trim().min(1),
+  path: z.string().trim().min(1).optional(),
+});
+
+export const createDeploymentInputSchema = z.object({
+  branch: z.string().trim().min(1),
+  environment: z.string().trim().min(1),
+  sourceCommitSha: z.string().trim().min(1).optional(),
+  ticketKey: z.string().trim().min(1).optional(),
+  workflows: z.array(deploymentWorkflowInputSchema).min(1),
+});
+
+export const deploymentBatchInputSchema = z.object({
+  id: z.string().trim().min(1),
 });
 
 export const connectionKindSchema = z.enum(["jira", "github", "argo", "repo"]);

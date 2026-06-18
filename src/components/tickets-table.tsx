@@ -1,4 +1,12 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Rocket } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ExternalLink,
+  Loader2,
+  Rocket,
+  TriangleAlert,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { openExternalLink } from "@/actions/shell";
 import DeploymentDialog from "@/components/deployment-dialog";
@@ -14,9 +22,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { devSystemUrl } from "@/domain/urls";
+import {
+  devSystemUrl,
+  type GithubRepoRef,
+  githubPullRequestUrl,
+} from "@/domain/urls";
 import { initialsOf } from "@/lib/status";
-import type { DevDeployment, TicketDeploymentRow } from "@/types/bfd";
+import type {
+  DeploymentBatch,
+  DeploymentRunState,
+  DevDeployment,
+  DevelopmentDataSource,
+  IntegrationStatus,
+  TicketDeploymentRow,
+} from "@/types/bfd";
 
 type SortDirection = "asc" | "desc";
 type SortKey = "assignee" | "deployed" | "prs" | "status" | "ticket" | "title";
@@ -32,9 +51,15 @@ const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
     { key: "title", label: "Title" },
     { key: "status", label: "Status", className: "w-[12rem]" },
     { key: "assignee", label: "Assignee", className: "w-[10rem]" },
-    { key: "prs", label: "PRs", className: "w-[8.5rem]" },
+    { key: "prs", label: "PRs", className: "w-[11rem]" },
     { key: "deployed", label: "Deployed to", className: "w-[11rem]" },
   ];
+const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
+  "cancelled",
+  "failure",
+  "success",
+  "timed-out",
+]);
 
 function ticketSortValue(ticketKey: string): [string, number] {
   const [project = ticketKey, number = "0"] = ticketKey.split("-");
@@ -134,11 +159,173 @@ function SortHeader({
   );
 }
 
+function dataSourceLabel(source: DevelopmentDataSource): string | null {
+  switch (source) {
+    case "enriched":
+      return null;
+    case "github":
+      return "GitHub";
+    case "jira":
+      return "Jira";
+    default:
+      return source;
+  }
+}
+
+function SourceBadge({ source }: { source: DevelopmentDataSource }) {
+  const label = dataSourceLabel(source);
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <Badge className="px-1 text-[0.625rem]" variant="outline">
+      {label}
+    </Badge>
+  );
+}
+
+function integrationStatusLabel(
+  status: IntegrationStatus,
+  label: string
+): string {
+  switch (status.kind) {
+    case "loading":
+      return `${label} loading`;
+    case "refreshing":
+      return `${label} cached`;
+    case "warning":
+      return `${label} partial`;
+    case "error":
+      return `${label} failed`;
+    default:
+      return label;
+  }
+}
+
+function IntegrationStatusBadge({
+  label,
+  status,
+}: {
+  label: string;
+  status?: IntegrationStatus;
+}) {
+  if (!status || status.kind === "ok" || status.kind === "idle") {
+    return null;
+  }
+
+  const isLoading = status.kind === "loading" || status.kind === "refreshing";
+  const variant = (() => {
+    switch (status.kind) {
+      case "error":
+        return "danger";
+      case "warning":
+        return "warning";
+      case "refreshing":
+        return "info";
+      default:
+        return "muted";
+    }
+  })();
+
+  return (
+    <Badge title={status.message} variant={variant}>
+      {isLoading ? <Loader2 className="animate-spin" /> : <TriangleAlert />}
+      {integrationStatusLabel(status, label)}
+    </Badge>
+  );
+}
+
+function latestDeploymentByTicket(
+  batches: DeploymentBatch[]
+): Map<string, DeploymentBatch> {
+  const byTicket = new Map<string, DeploymentBatch>();
+  for (const batch of batches.toSorted((a, b) => b.createdAt - a.createdAt)) {
+    if (batch.ticketKey && !byTicket.has(batch.ticketKey)) {
+      byTicket.set(batch.ticketKey, batch);
+    }
+  }
+  return byTicket;
+}
+
+function deploymentStateLabel(state: DeploymentRunState): string {
+  switch (state) {
+    case "pending-dispatch":
+      return "dispatching";
+    case "in-progress":
+      return "running";
+    case "timed-out":
+      return "timed out";
+    default:
+      return state;
+  }
+}
+
+function deploymentStateTone(
+  state: DeploymentRunState
+): "danger" | "info" | "muted" | "success" | "warning" {
+  switch (state) {
+    case "success":
+      return "success";
+    case "failure":
+    case "timed-out":
+      return "danger";
+    case "cancelled":
+      return "warning";
+    case "in-progress":
+    case "queued":
+      return "info";
+    default:
+      return "muted";
+  }
+}
+
+function firstDeploymentRunUrl(batch: DeploymentBatch): string | undefined {
+  return batch.workflows.find((workflow) => workflow.runUrl)?.runUrl;
+}
+
+function DeploymentRunBadge({ batch }: { batch: DeploymentBatch }) {
+  const runUrl = firstDeploymentRunUrl(batch);
+  const label = `Deploy ${deploymentStateLabel(batch.aggregateState)}`;
+  const badge = (
+    <Badge
+      title={`${batch.workflows.length} workflow${batch.workflows.length === 1 ? "" : "s"} for ${batch.branch}`}
+      variant={deploymentStateTone(batch.aggregateState)}
+    >
+      {!TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState) && (
+        <Loader2 className="animate-spin" />
+      )}
+      {label}
+      {runUrl && <ExternalLink />}
+    </Badge>
+  );
+
+  if (!runUrl) {
+    return badge;
+  }
+
+  return (
+    <button
+      className="inline-flex"
+      onClick={() => openExternalLink(runUrl)}
+      type="button"
+    >
+      {badge}
+    </button>
+  );
+}
+
 export default function TicketsTable({
+  deploymentBatches,
   deployments,
+  emptyMessage = "No sprint tickets match this search/filter.",
+  github,
   rows,
 }: {
+  deploymentBatches: DeploymentBatch[];
   deployments: DevDeployment[];
+  emptyMessage?: string;
+  github: GithubRepoRef;
   rows: TicketDeploymentRow[];
 }) {
   const [deployRow, setDeployRow] = useState<TicketDeploymentRow | null>(null);
@@ -154,6 +341,10 @@ export default function TicketsTable({
         return sort.direction === "asc" ? result : -result;
       }),
     [rows, sort]
+  );
+  const deploymentByTicket = useMemo(
+    () => latestDeploymentByTicket(deploymentBatches),
+    [deploymentBatches]
   );
 
   function updateSort(key: SortKey) {
@@ -189,12 +380,28 @@ export default function TicketsTable({
                 className="py-8 text-center text-muted-foreground text-sm"
                 colSpan={SORTABLE_HEADERS.length + 1}
               >
-                No sprint tickets match this search/filter.
+                {emptyMessage}
               </TableCell>
             </TableRow>
           )}
           {sortedRows.map((row) => {
-            const { ticket, pullRequests, deployments } = row;
+            const {
+              branches,
+              deployments,
+              developmentStatus,
+              devSystemStatus,
+              pullRequests,
+              ticket,
+            } = row;
+            const showNoDevelopment =
+              pullRequests.length === 0 &&
+              branches.length === 0 &&
+              developmentStatus?.kind !== "loading";
+            const showBranchOnly =
+              pullRequests.length === 0 && branches.length > 0;
+            const showNotDeployed =
+              deployments.length === 0 && devSystemStatus?.kind !== "loading";
+            const latestDeployment = deploymentByTicket.get(ticket.key);
             return (
               <TableRow key={ticket.key}>
                 <TableCell className="whitespace-nowrap">
@@ -240,45 +447,98 @@ export default function TicketsTable({
                 </TableCell>
 
                 <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {pullRequests.length === 0 && (
-                      <span className="text-muted-foreground/60 text-xs">
-                        —
-                      </span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap gap-1">
+                      {showNoDevelopment && (
+                        <span
+                          className="text-muted-foreground/60 text-xs"
+                          title="Create a branch prefixed with this Jira key or ensure the PR is linked in Jira/GitHub."
+                        >
+                          No PR/branch
+                        </span>
+                      )}
+                      {pullRequests.map((pr) => (
+                        <span
+                          className="inline-flex items-center gap-1"
+                          key={pr.number || pr.url}
+                        >
+                          <button
+                            className="inline-flex"
+                            onClick={() =>
+                              openExternalLink(
+                                pr.number > 0
+                                  ? githubPullRequestUrl(github, pr.number)
+                                  : pr.url
+                              )
+                            }
+                            type="button"
+                          >
+                            <PullRequestBadge pullRequest={pr} />
+                          </button>
+                          <SourceBadge source={pr.source} />
+                        </span>
+                      ))}
+                      {showBranchOnly && (
+                        <span
+                          className="inline-flex items-center gap-1"
+                          title={branches
+                            .map((branch) => branch.name)
+                            .join(", ")}
+                        >
+                          <Badge variant="outline">Branch found</Badge>
+                          <SourceBadge source={branches[0].source} />
+                        </span>
+                      )}
+                    </div>
+                    {developmentStatus && (
+                      <div className="flex flex-wrap gap-1">
+                        <IntegrationStatusBadge
+                          label="Dev data"
+                          status={developmentStatus}
+                        />
+                      </div>
                     )}
-                    {pullRequests.map((pr) => (
-                      <button
-                        className="inline-flex"
-                        key={pr.number}
-                        onClick={() => openExternalLink(pr.url)}
-                        type="button"
-                      >
-                        <PullRequestBadge pullRequest={pr} />
-                      </button>
-                    ))}
                   </div>
                 </TableCell>
 
                 <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {deployments.length === 0 && (
-                      <span className="text-muted-foreground/60 text-xs">
-                        not deployed
-                      </span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap gap-1">
+                      {showNotDeployed && (
+                        <span
+                          className="text-muted-foreground/60 text-xs"
+                          title="No ArgoCD dev system currently reports this Jira key in its branch."
+                        >
+                          not deployed
+                        </span>
+                      )}
+                      {deployments.map((d) => (
+                        <button
+                          className="inline-flex"
+                          key={d.environment}
+                          onClick={() =>
+                            openExternalLink(devSystemUrl(d.environment))
+                          }
+                          title={`Open dev-${d.environment}`}
+                          type="button"
+                        >
+                          <Badge variant="outline">{d.environment}</Badge>
+                        </button>
+                      ))}
+                    </div>
+                    {devSystemStatus && (
+                      <div className="flex flex-wrap gap-1">
+                        <IntegrationStatusBadge
+                          label="Argo"
+                          status={devSystemStatus}
+                        />
+                      </div>
                     )}
-                    {deployments.map((d) => (
-                      <button
-                        className="inline-flex"
-                        key={d.environment}
-                        onClick={() =>
-                          openExternalLink(devSystemUrl(d.environment))
-                        }
-                        title={`Open dev-${d.environment}`}
-                        type="button"
-                      >
-                        <Badge variant="outline">{d.environment}</Badge>
-                      </button>
-                    ))}
+                    {latestDeployment && (
+                      <div className="flex flex-wrap gap-1">
+                        <DeploymentRunBadge batch={latestDeployment} />
+                      </div>
+                    )}
                   </div>
                 </TableCell>
 

@@ -64,6 +64,7 @@ export interface PullRequestSummary {
   headSha: string | null;
   isDraft: boolean;
   number: number;
+  source: DevelopmentDataSource;
   state: "open" | "closed" | "merged";
   title: string;
   url: string;
@@ -72,8 +73,11 @@ export interface PullRequestSummary {
 export interface BranchSummary {
   headSha: string;
   name: string;
+  source: DevelopmentDataSource;
   url: string;
 }
+
+export type DevelopmentDataSource = "enriched" | "github" | "jira";
 
 export interface BuildSummary {
   name: string;
@@ -89,12 +93,129 @@ export interface JiraDevelopmentInfo {
   pullRequests: PullRequestSummary[];
 }
 
+export interface WorkflowTargetUsage {
+  lastBranch?: string;
+  lastEnvironment?: string;
+  lastTicketKey?: string;
+  lastUsedAt: number;
+  usageCount: number;
+}
+
+export type WorkflowInputType =
+  | "boolean"
+  | "choice"
+  | "environment"
+  | "number"
+  | "string";
+
+export interface WorkflowInputDefinition {
+  default?: string;
+  description?: string;
+  name: string;
+  options: string[];
+  required: boolean;
+  type: WorkflowInputType;
+}
+
+export interface WorkflowTarget {
+  aliases: string[];
+  fileName: string;
+  group: string;
+  inputs: WorkflowInputDefinition[];
+  name: string;
+  path: string;
+  usage: WorkflowTargetUsage | null;
+}
+
+export interface WorkflowTargetDiscoveryResult {
+  repoPath: string;
+  targets: WorkflowTarget[];
+  warnings: string[];
+  workflowsPath: string | null;
+}
+
+export interface WorkflowTargetUsageInput {
+  branch?: string;
+  environment?: string;
+  name: string;
+  ticketKey?: string;
+}
+
+export type DeploymentRunState =
+  | "cancelled"
+  | "failure"
+  | "in-progress"
+  | "pending-dispatch"
+  | "queued"
+  | "success"
+  | "timed-out"
+  | "unknown";
+
+export interface DeploymentWorkflowInput {
+  inputs: Record<string, string>;
+  name: string;
+  path?: string;
+}
+
+export interface DeploymentIntentInput {
+  branch: string;
+  environment: string;
+  sourceCommitSha?: string;
+  ticketKey?: string;
+  workflows: DeploymentWorkflowInput[];
+}
+
+export interface DeploymentWorkflowRun {
+  conclusion?: string | null;
+  currentAttempt?: number;
+  dispatchError?: string;
+  dispatchRequestedAt: number;
+  environment: string;
+  fileName: string;
+  inputs: Record<string, string>;
+  runCreatedAt?: string;
+  runId?: number;
+  runStatus?: string | null;
+  runUpdatedAt?: string;
+  runUrl?: string;
+  state: DeploymentRunState;
+  targetName: string;
+  workflowPath: string;
+}
+
+export interface DeploymentBatch {
+  aggregateState: DeploymentRunState;
+  branch: string;
+  createdAt: number;
+  environment: string;
+  id: string;
+  sourceCommitSha?: string;
+  ticketKey?: string;
+  updatedAt: number;
+  workflows: DeploymentWorkflowRun[];
+}
+
 /** Joined row for the ticket-centric dashboard. */
 export interface TicketDeploymentRow {
   branches: BranchSummary[];
   deployments: DevDeployment[];
+  developmentStatus?: IntegrationStatus;
+  devSystemStatus?: IntegrationStatus;
   pullRequests: PullRequestSummary[];
   ticket: JiraTicket;
+}
+
+export type IntegrationStatusKind =
+  | "error"
+  | "idle"
+  | "loading"
+  | "ok"
+  | "refreshing"
+  | "warning";
+
+export interface IntegrationStatus {
+  kind: IntegrationStatusKind;
+  message: string;
 }
 
 export interface ConnectionResult {

@@ -173,4 +173,147 @@ describe("JiraCloudService", () => {
     );
     expect(url.searchParams.get("maxResults")).toBe("25");
   });
+
+  test("parses development summary targets, details, and duplicates", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          summary: {
+            branch: { byInstanceType: { GitHub: { count: 2 } } },
+            build: { byInstanceType: { GitHub: { count: 1 } } },
+            pullrequest: { byInstanceType: { GitHub: { count: 2 } } },
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              branches: [
+                {
+                  lastCommit: { id: "branch-sha" },
+                  name: "PC-255-fix-search-a11y",
+                  url: "https://github.example/tree/PC-255-fix-search-a11y",
+                },
+                {
+                  lastCommit: { id: "duplicate-sha" },
+                  name: "PC-255-fix-search-a11y",
+                  url: "https://github.example/tree/PC-255-fix-search-a11y",
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              pullRequests: [
+                {
+                  destination: { branch: "master" },
+                  id: 4830,
+                  lastCommit: { id: "pr-sha" },
+                  source: { branch: "PC-255-fix-search-a11y" },
+                  status: "OPEN APPROVED",
+                  title: "PC-255: Fix search icon a11y",
+                  url: "https://github.example/pull/4830",
+                },
+                {
+                  destination: { branch: "master" },
+                  id: 4830,
+                  source: { branch: "PC-255-fix-search-a11y" },
+                  status: "OPEN",
+                  title: "duplicate",
+                  url: "https://github.example/pull/4830",
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              builds: [
+                {
+                  name: "CI / test",
+                  status: "SUCCESSFUL",
+                  url: "https://github.example/actions/runs/1",
+                },
+              ],
+            },
+          ],
+        })
+      );
+
+    const info = await new JiraCloudService(configService()).getDevelopmentInfo(
+      "255"
+    );
+
+    expect(info.branches).toEqual([
+      {
+        headSha: "branch-sha",
+        name: "PC-255-fix-search-a11y",
+        source: "jira",
+        url: "https://github.example/tree/PC-255-fix-search-a11y",
+      },
+    ]);
+    expect(info.pullRequests).toEqual([
+      expect.objectContaining({
+        approved: true,
+        headRef: "PC-255-fix-search-a11y",
+        headSha: "pr-sha",
+        number: 4830,
+        source: "jira",
+      }),
+    ]);
+    expect(info.builds).toEqual([
+      {
+        name: "CI / test",
+        status: "SUCCESSFUL",
+        url: "https://github.example/actions/runs/1",
+      },
+    ]);
+    expect(info.buildCount).toBe(1);
+    expect(info.errors).toEqual([]);
+  });
+
+  test("keeps partial development data when one detail target fails", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          summary: {
+            branch: { byInstanceType: { GitHub: { count: 1 } } },
+            pullrequest: { byInstanceType: { GitHub: { count: 1 } } },
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              branches: [
+                {
+                  name: "PC-255-fix-search-a11y",
+                  url: "https://github.example/tree/PC-255-fix-search-a11y",
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ message: "dev-status timeout" }, { status: 504 })
+      );
+
+    const info = await new JiraCloudService(configService()).getDevelopmentInfo(
+      "255"
+    );
+
+    expect(info.branches).toHaveLength(1);
+    expect(info.pullRequests).toEqual([]);
+    expect(info.errors).toEqual(["Jira API error (504): dev-status timeout"]);
+  });
 });

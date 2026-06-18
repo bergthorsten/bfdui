@@ -322,6 +322,7 @@ function pr(
     state,
     isDraft,
     headSha: sha(),
+    source: "enriched",
   };
 }
 
@@ -393,6 +394,7 @@ function branchSummary(name: string): BranchSummary {
   return {
     name,
     headSha: sha(),
+    source: "github",
     url: githubBranchUrl(DEFAULT_GITHUB_REPO, name),
   };
 }
