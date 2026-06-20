@@ -1,6 +1,5 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { githubBranchUrl, githubPullRequestUrl } from "@/domain/urls";
+import { execCli } from "@/services/cli";
 import type { ConfigService } from "@/services/config";
 import type {
   BranchSummary,
@@ -9,7 +8,6 @@ import type {
   PullRequestSummary,
 } from "@/types/bfd";
 
-const execFileAsync = promisify(execFile);
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
 const GITHUB_PR_NUMBER_PATTERN = /\/pull\/(\d+)/;
@@ -60,6 +58,7 @@ interface GitHubIssueSearchItem {
   pull_request?: unknown;
   state?: "closed" | "open";
   title?: string;
+  updated_at?: string;
 }
 
 interface GitHubPullRequestResponse {
@@ -71,6 +70,7 @@ interface GitHubPullRequestResponse {
   number?: number;
   state?: "closed" | "open";
   title?: string;
+  updated_at?: string;
 }
 
 export interface GitHubReviewResponse {
@@ -353,10 +353,12 @@ export class GitHubService {
       headRef: githubPullRequest.head?.ref ?? pullRequest.headRef,
       headSha: githubPullRequest.head?.sha ?? pullRequest.headSha,
       isDraft: githubPullRequest.draft ?? pullRequest.isDraft,
+      mergedAt: githubPullRequest.merged_at ?? pullRequest.mergedAt,
       number: githubPullRequest.number ?? pullRequest.number,
       source: pullRequest.source === "jira" ? "enriched" : pullRequest.source,
       state: pullRequestState(githubPullRequest, pullRequest.state),
       title: githubPullRequest.title ?? pullRequest.title,
+      updatedAt: githubPullRequest.updated_at ?? pullRequest.updatedAt,
       url: githubPullRequest.html_url ?? pullRequest.url,
     };
   }
@@ -463,7 +465,7 @@ export class GitHubService {
 
   private async readGhCliToken(): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync("gh", ["auth", "token"], {
+      const { stdout } = await execCli("gh", ["auth", "token"], {
         timeout: 5000,
       });
       return stdout.trim() || null;
@@ -592,10 +594,12 @@ function mergePullRequests(
         headRef: existing.headRef || pullRequest.headRef,
         headSha: existing.headSha ?? pullRequest.headSha,
         isDraft: existing.isDraft || pullRequest.isDraft,
+        mergedAt: existing.mergedAt ?? pullRequest.mergedAt,
         number: existing.number || pullRequest.number,
         source: "enriched",
         state: pullRequest.state,
         title: existing.title || pullRequest.title,
+        updatedAt: existing.updatedAt ?? pullRequest.updatedAt,
         url: existing.url || pullRequest.url,
       });
     }
@@ -620,6 +624,7 @@ function githubPullRequestToSummary(
       headRef: pullRequest.head?.ref ?? "",
       headSha: pullRequest.head?.sha ?? null,
       isDraft: pullRequest.draft ?? false,
+      mergedAt: pullRequest.merged_at ?? null,
       number,
       source: "github",
       state: pullRequestState(
@@ -627,6 +632,7 @@ function githubPullRequestToSummary(
         pullRequest.state === "closed" ? "closed" : "open"
       ),
       title: pullRequest.title ?? `Pull request #${number}`,
+      updatedAt: pullRequest.updated_at ?? null,
       url: pullRequest.html_url ?? githubPullRequestUrl(repo, number),
     },
   ];
@@ -652,6 +658,7 @@ function issueSearchItemToPullRequest(
       source: "github",
       state: item.state === "closed" ? "closed" : "open",
       title: item.title ?? `Pull request #${number}`,
+      updatedAt: item.updated_at ?? null,
       url: item.html_url ?? githubPullRequestUrl(repo, number),
     },
   ];

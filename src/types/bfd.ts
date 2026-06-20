@@ -57,16 +57,28 @@ export interface JiraTicket {
   url: string;
 }
 
+export interface JiraSprint {
+  endDate: string | null;
+  goal: string;
+  id: number;
+  name: string;
+  startDate: string | null;
+  state: string;
+}
+
 export interface PullRequestSummary {
   approved?: boolean;
   baseRef: string;
+  changedFiles?: string[];
   headRef: string;
   headSha: string | null;
   isDraft: boolean;
+  mergedAt?: string | null;
   number: number;
   source: DevelopmentDataSource;
   state: "open" | "closed" | "merged";
   title: string;
+  updatedAt?: string | null;
   url: string;
 }
 
@@ -118,6 +130,7 @@ export interface WorkflowInputDefinition {
 }
 
 export interface WorkflowTarget {
+  affectedPathGlobs: string[];
   aliases: string[];
   fileName: string;
   group: string;
@@ -276,4 +289,10 @@ export interface AppConfig {
 export interface SecretStatus {
   githubToken: boolean;
   jiraToken: boolean;
+}
+
+export interface SaveConfigResult {
+  config: AppConfig;
+  secrets: SecretStatus;
+  warning?: string;
 }

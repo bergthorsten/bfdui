@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 interface PageHeaderProps {
   actions?: ReactNode;
-  description?: string;
+  description?: ReactNode;
   title: string;
 }
 
@@ -18,7 +18,7 @@ export default function PageHeader({
           {title}
         </h1>
         {description && (
-          <p className="text-muted-foreground text-sm">{description}</p>
+          <div className="text-muted-foreground text-sm">{description}</div>
         )}
       </div>
       {actions && (

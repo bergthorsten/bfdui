@@ -112,6 +112,31 @@ describe("WorkflowService", () => {
     );
   });
 
+  test("parses deploy-affected push path globs", () => {
+    writeWorkflow(
+      tempDir,
+      "app-shop.yml",
+      `name: Deploy shop
+on:
+  push:
+    paths:
+      - "apps/shop/**"
+      - packages/shop-ui/*
+  workflow_dispatch:
+`
+    );
+
+    const [target] = new WorkflowService(
+      configProvider(tempDir),
+      path.join(tempDir, "usage.json")
+    ).discoverTargets().targets;
+
+    expect(target?.affectedPathGlobs).toEqual([
+      "apps/shop/**",
+      "packages/shop-ui/*",
+    ]);
+  });
+
   test("discovers workflows inside a repo-named checkout under devenv", () => {
     const devenvPath = path.join(tempDir, "devenv");
     const checkoutPath = path.join(devenvPath, "shop");

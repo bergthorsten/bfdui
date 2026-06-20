@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { app, safeStorage } from "electron";
@@ -96,37 +102,43 @@ export class ConfigService {
     return path.join(this.secretsDir, `${key}.enc`);
   }
 
+  private unsafeSecretPath(key: SecretKey): string {
+    return path.join(this.secretsDir, `${key}.unsafe.txt`);
+  }
+
   setSecret(key: SecretKey, value: string): void {
     if (!value) {
       this.clearSecret(key);
       return;
     }
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error(
-        "Secret storage encryption is not available on this system. Token was not saved."
-      );
+      console.warn(secretStorageUnavailableMessage());
+      writeFileSync(this.unsafeSecretPath(key), value, "utf8");
+      return;
     }
 
     const encrypted = safeStorage.encryptString(value);
     writeFileSync(this.secretPath(key), encrypted);
+    this.deleteIfExists(this.unsafeSecretPath(key));
   }
 
   /** Main-process only. Never expose the return value to the renderer. */
   getSecret(key: SecretKey): string | null {
     const file = this.secretPath(key);
     if (!existsSync(file)) {
-      return null;
+      return this.getUnsafeSecret(key);
     }
     try {
       const buf = readFileSync(file);
       if (buf.length === 0 || !safeStorage.isEncryptionAvailable()) {
-        return null;
+        return this.getUnsafeSecret(key);
       }
       return safeStorage.decryptString(buf);
     } catch (error) {
       console.error(`Failed to decrypt secret ${key}:`, error);
-      return null;
     }
+
+    return this.getUnsafeSecret(key);
   }
 
   clearSecret(key: SecretKey): void {
@@ -134,12 +146,43 @@ export class ConfigService {
     if (existsSync(file)) {
       writeFileSync(file, Buffer.alloc(0));
     }
+    this.deleteIfExists(this.unsafeSecretPath(key));
   }
 
   secretStatus(): SecretStatus {
     return {
-      jiraToken: Boolean(this.getSecret("jiraToken")),
-      githubToken: Boolean(this.getSecret("githubToken")),
+      jiraToken: this.hasSecret("jiraToken"),
+      githubToken: this.hasSecret("githubToken"),
     };
   }
+
+  private getUnsafeSecret(key: SecretKey): string | null {
+    const file = this.unsafeSecretPath(key);
+    if (!existsSync(file)) {
+      return null;
+    }
+    return readFileSync(file, "utf8") || null;
+  }
+
+  private hasSecret(key: SecretKey): boolean {
+    return Boolean(this.getSecret(key) ?? this.getUnsafeSecret(key));
+  }
+
+  private deleteIfExists(file: string): void {
+    if (existsSync(file)) {
+      unlinkSync(file);
+    }
+  }
+}
+
+function secretStorageUnavailableMessage(): string {
+  if (process.platform === "darwin") {
+    return "macOS Keychain is not available to this app right now. Token was not saved.";
+  }
+
+  if (process.platform === "linux") {
+    return "Linux secret storage is not available. Install and unlock a secret service such as GNOME Keyring or KWallet, then try again.";
+  }
+
+  return "Secret storage encryption is not available on this system. Token was not saved.";
 }

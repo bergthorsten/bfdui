@@ -1,6 +1,7 @@
 import {
   checkEnvironment,
   createDeployment,
+  getActiveSprint,
   getConfig,
   getDeploymentBatch,
   getDeploymentBatches,
@@ -18,6 +19,7 @@ import {
 export const bfd = {
   checkEnvironment,
   createDeployment,
+  getActiveSprint,
   getDeploymentBatch,
   getDeploymentBatches,
   getConfig,

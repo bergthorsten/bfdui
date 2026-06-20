@@ -8,22 +8,16 @@ import {
 } from "@icons-pack/react-simple-icons";
 import { createFileRoute } from "@tanstack/react-router";
 import { CircleCheck, CircleX, FolderGit2, Loader2, Save } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
-import { getBfdConfig, saveBfdConfig, testBfdConnection } from "@/actions/bfd";
+import { type ReactNode, useState } from "react";
 import PageHeader from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { AppConfig, ConnectionResult, SecretStatus } from "@/types/bfd";
+import { useSettingsForm } from "@/routes/use-settings-form";
+import type { ConnectionResult } from "@/types/bfd";
 
-type ConnectionKind = "jira" | "github" | "argo" | "repo";
 type TestState = "idle" | "testing" | "ok" | "error";
-
-const EMPTY_SECRET_STATUS: SecretStatus = {
-  githubToken: false,
-  jiraToken: false,
-};
 
 function TestButton({
   disabled,
@@ -139,131 +133,24 @@ function Section({
 }
 
 function Settings() {
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [secrets, setSecrets] = useState<SecretStatus>(EMPTY_SECRET_STATUS);
-  const [jiraToken, setJiraToken] = useState("");
-  const [githubToken, setGithubToken] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState<ConnectionResult | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const initial = await getBfdConfig();
-        if (!cancelled) {
-          setConfig(initial.config);
-          setSecrets(initial.secrets);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function updateConfig(patch: Partial<AppConfig>) {
-    setConfig((current) => (current ? { ...current, ...patch } : current));
-    setSaveResult(null);
-  }
-
-  function updateJira(patch: Partial<AppConfig["jira"]>) {
-    setConfig((current) =>
-      current ? { ...current, jira: { ...current.jira, ...patch } } : current
-    );
-    setSaveResult(null);
-  }
-
-  function updateGithub(patch: Partial<AppConfig["github"]>) {
-    setConfig((current) =>
-      current
-        ? { ...current, github: { ...current.github, ...patch } }
-        : current
-    );
-    setSaveResult(null);
-  }
-
-  function updateArgo(patch: Partial<AppConfig["argo"]>) {
-    setConfig((current) =>
-      current ? { ...current, argo: { ...current.argo, ...patch } } : current
-    );
-    setSaveResult(null);
-  }
-
-  async function persist(options?: {
-    clearGithubToken?: boolean;
-    clearJiraToken?: boolean;
-    markComplete?: boolean;
-  }) {
-    if (!config) {
-      throw new Error("Settings have not loaded yet.");
-    }
-
-    setSaving(true);
-    const nextConfig = {
-      ...config,
-      onboardingComplete: options?.markComplete
-        ? true
-        : config.onboardingComplete,
-    };
-
-    try {
-      const saved = await saveBfdConfig({
-        config: nextConfig,
-        secrets: {
-          clearGithubToken: options?.clearGithubToken,
-          clearJiraToken: options?.clearJiraToken,
-          githubToken: githubToken.trim() || undefined,
-          jiraToken: jiraToken.trim() || undefined,
-        },
-      });
-      setConfig(saved.config);
-      setSecrets(saved.secrets);
-      setGithubToken("");
-      setJiraToken("");
-      return saved;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveSettings() {
-    try {
-      await persist({ markComplete: true });
-      setSaveResult({ ok: true, message: "Settings saved." });
-    } catch (error) {
-      setSaveResult({ ok: false, message: messageOf(error) });
-    }
-  }
-
-  async function clearSecret(kind: "jira" | "github") {
-    await persist({
-      clearGithubToken: kind === "github",
-      clearJiraToken: kind === "jira",
-    });
-  }
-
-  function test(kind: ConnectionKind) {
-    if (!config) {
-      throw new Error("Settings have not loaded yet.");
-    }
-
-    return testBfdConnection(kind, {
-      config,
-      secrets: {
-        githubToken: githubToken.trim() || undefined,
-        jiraToken: jiraToken.trim() || undefined,
-      },
-    });
-  }
+  const {
+    clearSecret,
+    config,
+    githubToken,
+    jiraToken,
+    loading,
+    saveResult,
+    saveSettings,
+    saving,
+    secrets,
+    setGithubToken,
+    setJiraToken,
+    test,
+    updateArgo,
+    updateConfig,
+    updateGithub,
+    updateJira,
+  } = useSettingsForm();
 
   if (loading || !config) {
     return (
@@ -521,10 +408,10 @@ function Settings() {
   );
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export const Route = createFileRoute("/settings")({
   component: Settings,
 });
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

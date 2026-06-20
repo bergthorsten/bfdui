@@ -16,9 +16,9 @@ function createWindow() {
   const preload = path.join(basePath, "preload.js");
   mainWindow = new BrowserWindow({
     width: 1280,
-    height: 860,
-    minWidth: 1040,
-    minHeight: 760,
+    height: 920,
+    minWidth: 1200,
+    minHeight: 920,
     webPreferences: {
       devTools: inDevelopment,
       contextIsolation: true,
@@ -33,7 +33,7 @@ function createWindow() {
       process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
   });
 
-  mainWindow.setMinimumSize(1040, 760);
+  mainWindow.setMinimumSize(1200, 920);
 
   mainWindow.on("closed", () => {
     mainWindow = null;

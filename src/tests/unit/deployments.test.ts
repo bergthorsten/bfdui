@@ -28,6 +28,7 @@ function target(
   inputs: WorkflowTarget["inputs"] = []
 ): WorkflowTarget {
   return {
+    affectedPathGlobs: [],
     aliases: [name.replace(APP_WORKFLOW_PREFIX_PATTERN, "")],
     fileName: `${name}.yml`,
     group: name.split("-")[0] ?? "app",

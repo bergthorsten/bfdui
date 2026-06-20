@@ -15,9 +15,12 @@ const APP_CONFIG = {
   repoPath: "/tmp/shop",
 };
 
-function configService(token: string | null = "jira-token"): ConfigService {
+function configService(
+  token: string | null = "jira-token",
+  appConfig = APP_CONFIG
+): ConfigService {
   return {
-    get: () => structuredClone(APP_CONFIG),
+    get: () => structuredClone(appConfig),
     getSecret: () => token,
   } as unknown as ConfigService;
 }
@@ -114,6 +117,42 @@ describe("JiraCloudService", () => {
     });
   });
 
+  test("reports missing Jira credentials before calling the API", async () => {
+    await expect(
+      new JiraCloudService(configService(null)).testConnection()
+    ).resolves.toMatchObject({
+      message: "No Jira API token configured.",
+      ok: false,
+    });
+
+    await expect(
+      new JiraCloudService(
+        configService("jira-token", {
+          ...APP_CONFIG,
+          jira: { ...APP_CONFIG.jira, email: "" },
+        })
+      ).testConnection()
+    ).resolves.toMatchObject({
+      message: "No Jira email configured.",
+      ok: false,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("sanitizes non-JSON Jira error responses", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("Bad gateway\nfrom Atlassian", {
+        status: 502,
+        statusText: "Bad Gateway",
+      })
+    );
+
+    await expect(
+      new JiraCloudService(configService()).search("project = PC")
+    ).rejects.toThrow("Jira API error (502): Bad gateway from Atlassian");
+  });
+
   test("paginates sprint search and maps tickets", async () => {
     fetchMock
       .mockResolvedValueOnce(
@@ -145,6 +184,101 @@ describe("JiraCloudService", () => {
 
     const secondUrl = new URL(fetchMock.mock.calls[1][0].toString());
     expect(secondUrl.searchParams.get("nextPageToken")).toBe("next-page");
+  });
+
+  test("stops search pagination at the max page safety bound", async () => {
+    for (let index = 0; index < 25; index++) {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          issues: [issue(`PC-${index + 1}`)],
+          nextPageToken: `page-${index + 2}`,
+        })
+      );
+    }
+
+    const tickets = await new JiraCloudService(configService()).search(
+      "project = PC"
+    );
+
+    expect(tickets).toHaveLength(20);
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    const lastUrl = new URL(fetchMock.mock.calls.at(-1)?.[0].toString() ?? "");
+    expect(lastUrl.searchParams.get("nextPageToken")).toBe("page-20");
+  });
+
+  test("loads active sprint metadata from the configured sprint JQL issues", async () => {
+    const selectedSprint = {
+      endDate: "2026-06-21T16:00:00.000Z",
+      goal: "Our customers can order with Paypal Express without login.",
+      id: 7,
+      name: "Endgegner PainPal",
+      startDate: "2026-06-16T08:00:00.000Z",
+      state: "active",
+    };
+    const otherActiveSprint = {
+      endDate: "2026-06-19T16:00:00.000Z",
+      goal: "Wrong board",
+      id: 3,
+      name: "Wrong active sprint",
+      startDate: "2026-06-16T08:00:00.000Z",
+      state: "active",
+    };
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: "customfield_10020",
+            name: "Sprint",
+            schema: { custom: "com.pyxis.greenhopper.jira:gh-sprint" },
+          },
+        ])
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          isLast: true,
+          issues: [
+            {
+              fields: { customfield_10020: [selectedSprint] },
+              id: "1",
+              key: "PC-1",
+            },
+            {
+              fields: { customfield_10020: [otherActiveSprint] },
+              id: "2",
+              key: "PC-2",
+            },
+            {
+              fields: { customfield_10020: [selectedSprint] },
+              id: "3",
+              key: "PC-3",
+            },
+          ],
+        })
+      );
+
+    const sprint = await new JiraCloudService(configService()).getActiveSprint(
+      "sprint in openSprints() AND project = PC ORDER BY rank ASC"
+    );
+
+    expect(sprint).toEqual({
+      endDate: "2026-06-21T16:00:00.000Z",
+      goal: "Our customers can order with Paypal Express without login.",
+      id: 7,
+      name: "Endgegner PainPal",
+      startDate: "2026-06-16T08:00:00.000Z",
+      state: "active",
+    });
+
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(
+      "https://jira.example.com/rest/api/3/field"
+    );
+    const searchUrl = new URL(fetchMock.mock.calls[1][0].toString());
+    expect(searchUrl.pathname).toBe("/rest/api/3/search/jql");
+    expect(searchUrl.searchParams.get("fields")).toBe("customfield_10020");
+    expect(searchUrl.searchParams.get("jql")).toBe(
+      "sprint in openSprints() AND project = PC ORDER BY rank ASC"
+    );
   });
 
   test("looks up issue keys directly during global search", async () => {
@@ -278,6 +412,81 @@ describe("JiraCloudService", () => {
     ]);
     expect(info.buildCount).toBe(1);
     expect(info.errors).toEqual([]);
+  });
+
+  test("uses dev-status summary application types for detail requests", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          summary: {
+            branch: {
+              byInstanceType: {
+                "oAuth-com.github.integration.production": { count: 1 },
+              },
+            },
+            pullrequest: {
+              byInstanceType: {
+                "cloud-providers": { count: 1 },
+                GitHub: { count: 0 },
+              },
+            },
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              branches: [
+                {
+                  name: "PC-255-fix-search-a11y",
+                  url: "https://github.example/tree/PC-255-fix-search-a11y",
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          detail: [
+            {
+              pullrequests: [
+                {
+                  id: "4831",
+                  name: "PC-255-fix-search-a11y",
+                  status: "DECLINED",
+                  url: "https://git.example/reviews/4831",
+                },
+              ],
+            },
+          ],
+        })
+      );
+
+    const info = await new JiraCloudService(configService()).getDevelopmentInfo(
+      "255"
+    );
+
+    expect(info.branches).toHaveLength(1);
+    expect(info.pullRequests).toEqual([
+      expect.objectContaining({
+        number: 4831,
+        state: "closed",
+        title: "PC-255-fix-search-a11y",
+      }),
+    ]);
+
+    const detailUrls = fetchMock.mock.calls
+      .slice(1)
+      .map((call) => new URL(call[0].toString()));
+    expect(
+      detailUrls.map((url) => url.searchParams.get("applicationType"))
+    ).toEqual(["oAuth-com.github.integration.production", "cloud-providers"]);
+    expect(detailUrls.map((url) => url.searchParams.get("dataType"))).toEqual([
+      "branch",
+      "pullrequest",
+    ]);
   });
 
   test("keeps partial development data when one detail target fails", async () => {

@@ -360,6 +360,10 @@ function OnboardingWizard({
       });
       setConfig(saved.config);
       setSecrets(saved.secrets);
+      if (saved.warning) {
+        setSaveResult({ ok: false, message: saved.warning });
+        return;
+      }
       setGithubToken("");
       setJiraToken("");
       onComplete();
@@ -374,10 +378,14 @@ function OnboardingWizard({
     setSaving(true);
     setSaveResult(null);
     try {
-      await saveBfdConfig({
+      const saved = await saveBfdConfig({
         config: { ...config, onboardingComplete: true },
         secrets: draftSecrets(),
       });
+      if (saved.warning) {
+        setSaveResult({ ok: false, message: saved.warning });
+        return;
+      }
       onComplete();
     } catch (error) {
       setSaveResult({ ok: false, message: messageOf(error) });

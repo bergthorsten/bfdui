@@ -2,6 +2,7 @@ import { ipc } from "@/ipc/manager";
 import type {
   AppConfig,
   DeploymentIntentInput,
+  SaveConfigResult,
   WorkflowTargetUsageInput,
 } from "@/types/bfd";
 
@@ -15,6 +16,10 @@ export function checkBfdEnvironment() {
 
 export function getSprintTickets() {
   return ipc.client.bfd.getSprintTickets();
+}
+
+export function getActiveSprint() {
+  return ipc.client.bfd.getActiveSprint();
 }
 
 export function getDevDeployments() {
@@ -44,7 +49,7 @@ export function saveBfdConfig(input: {
     githubToken?: string;
     jiraToken?: string;
   };
-}) {
+}): Promise<SaveConfigResult> {
   return ipc.client.bfd.saveConfig(input);
 }
 

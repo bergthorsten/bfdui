@@ -59,7 +59,10 @@ function DialogContent({
       >
         {children}
         {showCloseButton && (
-          <DialogPrimitive.Close className="absolute top-4 right-4 inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">
+          <DialogPrimitive.Close
+            className="no-drag absolute top-4 right-4 z-10 inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 [-webkit-app-region:no-drag]"
+            type="button"
+          >
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>

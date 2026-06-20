@@ -80,6 +80,7 @@ export class WorkflowService {
         return [
           {
             aliases: aliasesForWorkflowName(name),
+            affectedPathGlobs: parseWorkflowAffectedPathGlobs(content),
             fileName: entry.name,
             group: workflowGroupForName(name),
             inputs: parseWorkflowDispatchInputs(content),
@@ -260,6 +261,46 @@ function parseWorkflowDispatchInputs(
   return inputs;
 }
 
+function parseWorkflowAffectedPathGlobs(content: string): string[] {
+  const lines = content.split(LINE_BREAK_PATTERN).map(parseYamlLine);
+  const onIndex = lines.findIndex(
+    (line) => parseYamlKeyName(line.text) === "on"
+  );
+  if (onIndex < 0) {
+    return [];
+  }
+
+  const onIndent = lines[onIndex].indent;
+  const onEndIndex = nextYamlSiblingIndex(lines, onIndex + 1, onIndent);
+  const pushIndex = lines.findIndex(
+    (line, index) =>
+      index > onIndex &&
+      index < onEndIndex &&
+      line.text &&
+      line.indent > onIndent &&
+      parseYamlKeyName(line.text) === "push"
+  );
+  if (pushIndex < 0) {
+    return [];
+  }
+
+  const pushIndent = lines[pushIndex].indent;
+  const pushEndIndex = nextYamlSiblingIndex(lines, pushIndex + 1, pushIndent);
+  const pathsIndex = lines.findIndex(
+    (line, index) =>
+      index > pushIndex &&
+      index < pushEndIndex &&
+      line.text &&
+      line.indent > pushIndent &&
+      parseYamlKeyName(line.text) === "paths"
+  );
+  if (pathsIndex < 0) {
+    return [];
+  }
+
+  return parseYamlList(lines, pathsIndex + 1, lines[pathsIndex].indent);
+}
+
 function parseWorkflowInputBlock(
   name: string,
   lines: Array<{ indent: number; text: string }>
@@ -352,6 +393,11 @@ function parseYamlLine(rawLine: string): { indent: number; text: string } {
 
 function parseYamlKey(text: string): string | null {
   return parseYamlProperty(text)?.key ?? null;
+}
+
+function parseYamlKeyName(text: string): string | null {
+  const key = parseYamlKey(text);
+  return key ? unquoteYamlScalar(key).toLowerCase() : null;
 }
 
 function parseYamlProperty(

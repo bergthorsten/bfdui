@@ -51,7 +51,7 @@ const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
     { key: "title", label: "Title" },
     { key: "status", label: "Status", className: "w-[12rem]" },
     { key: "assignee", label: "Assignee", className: "w-[10rem]" },
-    { key: "prs", label: "PRs", className: "w-[11rem]" },
+    { key: "prs", label: "PRs", className: "w-[15rem]" },
     { key: "deployed", label: "Deployed to", className: "w-[11rem]" },
   ];
 const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
@@ -446,9 +446,9 @@ export default function TicketsTable({
                   )}
                 </TableCell>
 
-                <TableCell>
+                <TableCell className="min-w-[15rem]">
                   <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       {showNoDevelopment && (
                         <span
                           className="text-muted-foreground/60 text-xs"
@@ -490,7 +490,7 @@ export default function TicketsTable({
                         </span>
                       )}
                     </div>
-                    {developmentStatus && (
+                    {developmentStatus && !showNoDevelopment && (
                       <div className="flex flex-wrap gap-1">
                         <IntegrationStatusBadge
                           label="Dev data"
@@ -545,12 +545,12 @@ export default function TicketsTable({
                 <TableCell className="w-[6.75rem]">
                   <div className="flex justify-end">
                     <Button
-                      className="w-[4.25rem]"
+                      className="h-[1.375rem] w-[4.375rem] text-[0.6875rem]"
                       onClick={() => setDeployRow(row)}
                       size="xs"
                       variant="default"
                     >
-                      <Rocket />
+                      <Rocket className="size-3" />
                       Deploy
                     </Button>
                   </div>

@@ -1,12 +1,22 @@
 import type { ConfigService } from "@/services/config";
+import {
+  type DevStatusDataType,
+  type DevStatusDetail,
+  type DevStatusDetailResponse,
+  type DevStatusSummaryResponse,
+  type DevStatusTarget,
+  detailPullRequests,
+  developmentInfoFromSettledDetails,
+  devStatusTargetsFromSummary,
+  fallbackDevelopmentTargets,
+} from "@/services/jira-dev-status";
+import { jiraErrorMessage, messageOf } from "@/services/jira-error";
 import type {
-  BranchSummary,
-  BuildSummary,
   ConnectionResult,
   JiraDevelopmentInfo,
+  JiraSprint,
   JiraStatusCategory,
   JiraTicket,
-  PullRequestSummary,
 } from "@/types/bfd";
 
 // Status buckets mirrored from bf-deploy/src/common/constants.py so the
@@ -30,10 +40,11 @@ const STATUS_OCCUPIED = new Set([
 
 interface JiraIssue {
   fields: {
-    summary: string;
-    status?: { name: string };
     assignee?: { displayName?: string; avatarUrls?: Record<string, string> };
+    status?: { name: string };
+    summary: string;
     updated?: string;
+    [fieldId: string]: unknown;
   };
   id: string;
   key: string;
@@ -45,55 +56,21 @@ interface JiraSearchResponse {
   nextPageToken?: string;
 }
 
-interface DevStatusDetailResponse {
-  detail?: DevStatusDetail[];
-  errors?: unknown[];
-}
-
-interface DevStatusSummaryResponse {
-  summary?: Partial<Record<DevStatusDataType, DevStatusSummaryData>>;
-}
-
-interface DevStatusSummaryData {
-  byInstanceType?: Record<string, { count?: number; name?: string }>;
-  overall?: { count?: number; dataType?: string; lastUpdated?: string | null };
-}
-
-type DevStatusDataType = "branch" | "build" | "pullrequest";
-
-interface DevStatusTarget {
-  applicationType: string;
-  dataType: DevStatusDataType;
-}
-
-interface DevStatusDetail {
-  branches?: DevStatusBranch[];
-  builds?: DevStatusBuild[];
-  pullRequests?: DevStatusPullRequest[];
-  pullrequests?: DevStatusPullRequest[];
-}
-
-interface DevStatusBranch {
-  lastCommit?: { id?: string };
+interface JiraField {
+  id: string;
   name?: string;
-  url?: string;
+  schema?: {
+    custom?: string;
+  };
 }
 
-interface DevStatusPullRequest {
-  destination?: { branch?: string };
-  id?: string | number;
-  lastCommit?: { id?: string };
+interface JiraSprintFieldValue {
+  endDate?: string;
+  goal?: string;
+  id?: number | string;
   name?: string;
-  source?: { branch?: string };
-  status?: string;
-  title?: string;
-  url?: string;
-}
-
-interface DevStatusBuild {
-  name?: string;
-  status?: string;
-  url?: string;
+  startDate?: string;
+  state?: string;
 }
 
 const PAGE_SIZE = 50;
@@ -101,7 +78,6 @@ const MAX_PAGES = 20; // safety bound
 const GLOBAL_SEARCH_PAGE_SIZE = 25;
 const TRAILING_SLASHES_PATTERN = /\/+$/;
 const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
-const GITHUB_PR_NUMBER_PATTERN = /\/pull\/(\d+)/;
 const JIRA_DEV_DEBUG = process.env.BFD_JIRA_DEV_DEBUG === "1";
 
 export function categorizeStatus(status: string): JiraStatusCategory {
@@ -228,6 +204,58 @@ export class JiraCloudService {
     return tickets;
   }
 
+  async getActiveSprint(jql: string): Promise<JiraSprint | null> {
+    const sprintFieldId = await this.sprintFieldId();
+    if (!sprintFieldId) {
+      return null;
+    }
+
+    const sprintsById = new Map<
+      number,
+      { issueCount: number; sprint: JiraSprint }
+    >();
+    let nextPageToken: string | undefined;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const url = new URL(`${this.baseUrl()}/rest/api/3/search/jql`);
+      url.searchParams.set("jql", jql);
+      url.searchParams.set("maxResults", String(PAGE_SIZE));
+      url.searchParams.set("fields", sprintFieldId);
+      if (nextPageToken) {
+        url.searchParams.set("nextPageToken", nextPageToken);
+      }
+
+      const res = await fetch(url, { headers: this.headers() });
+      if (!res.ok) {
+        throw new Error(await jiraErrorMessage(res));
+      }
+
+      const data = (await res.json()) as JiraSearchResponse;
+      for (const issue of data.issues) {
+        for (const sprint of sprintsFromFieldValue(
+          issue.fields[sprintFieldId]
+        )) {
+          if (sprint.state.toLowerCase() !== "active") {
+            continue;
+          }
+          const current = sprintsById.get(sprint.id);
+          sprintsById.set(sprint.id, {
+            sprint,
+            issueCount: (current?.issueCount ?? 0) + 1,
+          });
+        }
+      }
+
+      nextPageToken = data.nextPageToken;
+      if (data.issues.length === 0 || data.isLast || !nextPageToken) {
+        break;
+      }
+    }
+
+    const [activeSprint] = [...sprintsById.values()].sort(compareSprintMatches);
+
+    return activeSprint?.sprint ?? null;
+  }
+
   async searchAccessibleTickets(query: string): Promise<JiraTicket[]> {
     const normalized = query.trim();
     if (!normalized) {
@@ -256,33 +284,7 @@ export class JiraCloudService {
     );
     const details = await Promise.allSettled(detailRequests);
 
-    const errors = details
-      .filter((result) => result.status === "rejected")
-      .map((result) => messageOf(result.reason));
-    const allDetails = details.flatMap(detailValue);
-
-    const info = {
-      branches: uniqueBy(
-        allDetails.flatMap((detail) =>
-          (detail.branches ?? []).flatMap(branchToSummary)
-        ),
-        (branch) => branch.name
-      ),
-      pullRequests: uniqueBy(
-        allDetails.flatMap((detail) =>
-          detailPullRequests(detail).flatMap(pullRequestToSummary)
-        ),
-        (pullRequest) => pullRequest.url
-      ),
-      builds: allDetails.flatMap((detail) =>
-        (detail.builds ?? []).flatMap(buildToSummary)
-      ),
-      buildCount: allDetails.reduce(
-        (count, detail) => count + (detail.builds?.length ?? 0),
-        0
-      ),
-      errors,
-    };
+    const info = developmentInfoFromSettledDetails(details);
 
     jiraDevLog(`parsed development info for issue ${issueId}`, {
       branches: info.branches.length,
@@ -373,18 +375,7 @@ export class JiraCloudService {
 
     const data = (await res.json()) as DevStatusSummaryResponse;
     const summary = data.summary ?? {};
-    const targets: DevStatusTarget[] = [];
-
-    for (const dataType of ["branch", "pullrequest", "build"] as const) {
-      const byInstanceType = summary[dataType]?.byInstanceType ?? {};
-      for (const [applicationType, instance] of Object.entries(
-        byInstanceType
-      )) {
-        if ((instance.count ?? 0) > 0) {
-          targets.push({ applicationType, dataType });
-        }
-      }
-    }
+    const targets = devStatusTargetsFromSummary(data);
 
     jiraDevLog(`summary payload for issue ${issueId}`, {
       targets,
@@ -417,6 +408,25 @@ export class JiraCloudService {
     return data.issues.map((issue) => this.toTicket(issue));
   }
 
+  private async sprintFieldId(): Promise<string | null> {
+    const res = await fetch(`${this.baseUrl()}/rest/api/3/field`, {
+      headers: this.headers(),
+    });
+    if (!res.ok) {
+      throw new Error(await jiraErrorMessage(res));
+    }
+
+    const fields = (await res.json()) as JiraField[];
+    return (
+      fields.find(
+        (field) =>
+          field.schema?.custom === "com.pyxis.greenhopper.jira:gh-sprint"
+      )?.id ??
+      fields.find((field) => field.name === "Sprint")?.id ??
+      null
+    );
+  }
+
   async getTicket(key: string): Promise<JiraTicket | null> {
     const url = new URL(`${this.baseUrl()}/rest/api/3/issue/${key}`);
     url.searchParams.set("fields", "summary,status,assignee,updated");
@@ -431,118 +441,81 @@ export class JiraCloudService {
   }
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function jqlString(value: string): string {
   return `"${value.replace(/["\\]/g, " ").replace(/\s+/g, " ").trim()}"`;
 }
 
-function detailValue(
-  result: PromiseSettledResult<DevStatusDetail[]>
-): DevStatusDetail[] {
-  return result.status === "fulfilled" ? result.value : [];
-}
-
-function branchToSummary(branch: DevStatusBranch): BranchSummary[] {
-  if (!(branch.name && branch.url)) {
-    return [];
+function sprintsFromFieldValue(value: unknown): JiraSprint[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(sprintsFromFieldValue);
   }
-  return [
-    {
-      name: branch.name,
-      source: "jira",
-      url: branch.url,
-      headSha: branch.lastCommit?.id ?? "",
-    },
-  ];
-}
-
-function pullRequestToSummary(
-  pullRequest: DevStatusPullRequest
-): PullRequestSummary[] {
-  if (!pullRequest.url) {
+  if (typeof value === "string") {
+    return sprintFromLegacyString(value);
+  }
+  if (!(value && typeof value === "object")) {
     return [];
   }
 
-  const number = pullRequestNumber(pullRequest);
-  return [
-    {
-      number,
-      title: pullRequest.title ?? pullRequest.name ?? `Pull request #${number}`,
-      url: pullRequest.url,
-      headRef: pullRequest.source?.branch ?? pullRequest.name ?? "",
-      baseRef: pullRequest.destination?.branch ?? "",
-      state: pullRequestState(pullRequest.status),
-      isDraft: false,
-      approved: pullRequestApproved(pullRequest.status),
-      headSha: pullRequest.lastCommit?.id ?? null,
-      source: "jira",
-    },
-  ];
-}
-
-function buildToSummary(build: DevStatusBuild): BuildSummary[] {
-  if (!build.url) {
+  const sprint = value as JiraSprintFieldValue;
+  const id = Number(sprint.id);
+  if (!(Number.isFinite(id) && sprint.name)) {
     return [];
   }
+
+  return [toSprint({ ...sprint, id })];
+}
+
+function sprintFromLegacyString(value: string): JiraSprint[] {
+  const id = Number(legacySprintField(value, "id"));
+  const name = legacySprintField(value, "name");
+  if (!(Number.isFinite(id) && name)) {
+    return [];
+  }
+
   return [
-    {
-      name: build.name ?? "Build",
-      status: build.status ?? "unknown",
-      url: build.url,
-    },
+    toSprint({
+      endDate: legacySprintField(value, "endDate") ?? undefined,
+      goal: legacySprintField(value, "goal") ?? undefined,
+      id,
+      name,
+      startDate: legacySprintField(value, "startDate") ?? undefined,
+      state: legacySprintField(value, "state") ?? undefined,
+    }),
   ];
 }
 
-function detailPullRequests(detail: DevStatusDetail): DevStatusPullRequest[] {
-  return detail.pullRequests ?? detail.pullrequests ?? [];
+function legacySprintField(value: string, field: string): string | null {
+  const match = value.match(new RegExp(`(?:\\[|,)${field}=([^,\\]]*)`));
+  return match?.[1]?.trim() || null;
 }
 
-function fallbackDevelopmentTargets(): DevStatusTarget[] {
-  return (["branch", "pullrequest", "build"] as const).map((dataType) => ({
-    applicationType: "GitHub",
-    dataType,
-  }));
+function toSprint(sprint: JiraSprintFieldValue & { id: number }): JiraSprint {
+  return {
+    endDate: sprint.endDate ?? null,
+    goal: sprint.goal ?? "",
+    id: sprint.id,
+    name: sprint.name ?? "",
+    startDate: sprint.startDate ?? null,
+    state: sprint.state ?? "",
+  };
 }
 
-function pullRequestNumber(pullRequest: DevStatusPullRequest): number {
-  const urlMatch = pullRequest.url?.match(GITHUB_PR_NUMBER_PATTERN);
-  if (urlMatch?.[1]) {
-    return Number(urlMatch[1]);
+function compareSprintMatches(
+  a: { issueCount: number; sprint: JiraSprint },
+  b: { issueCount: number; sprint: JiraSprint }
+): number {
+  return (
+    b.issueCount - a.issueCount ||
+    dateValue(a.sprint.endDate) - dateValue(b.sprint.endDate)
+  );
+}
+
+function dateValue(value: string | null): number {
+  if (!value) {
+    return Number.MAX_SAFE_INTEGER;
   }
-  const id = Number(pullRequest.id);
-  return Number.isFinite(id) ? id : 0;
-}
-
-function pullRequestState(
-  status: string | undefined
-): PullRequestSummary["state"] {
-  const normalized = status?.toLowerCase() ?? "";
-  if (normalized.includes("merged")) {
-    return "merged";
-  }
-  if (normalized.includes("closed") || normalized.includes("declined")) {
-    return "closed";
-  }
-  return "open";
-}
-
-function pullRequestApproved(status: string | undefined): boolean {
-  return (status?.toLowerCase() ?? "").includes("approved");
-}
-
-function uniqueBy<T>(items: T[], keyOf: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = keyOf(item);
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
 }
 
 function jiraDevLog(message: string, data?: unknown): void {
@@ -565,38 +538,4 @@ function jiraDevWarn(message: string, data?: unknown): void {
     return;
   }
   console.warn(`[jira-dev] ${message}`, data);
-}
-
-async function jiraErrorMessage(res: Response): Promise<string> {
-  const text = await res.text();
-  const detail = sanitizedJiraMessage(text) || res.statusText;
-  return detail
-    ? `Jira API error (${res.status}): ${detail}`
-    : `Jira API error (${res.status}).`;
-}
-
-function sanitizedJiraMessage(text: string): string {
-  if (!text) {
-    return "";
-  }
-
-  try {
-    const data = JSON.parse(text) as {
-      errorMessages?: unknown;
-      errors?: unknown;
-      message?: unknown;
-    };
-    const messages = Array.isArray(data.errorMessages)
-      ? data.errorMessages.map(String)
-      : [];
-    if (data.errors && typeof data.errors === "object") {
-      messages.push(...Object.values(data.errors).map(String));
-    }
-    if (typeof data.message === "string") {
-      messages.push(data.message);
-    }
-    return messages.join("; ").slice(0, 500);
-  } catch {
-    return text.replace(/\s+/g, " ").slice(0, 300);
-  }
 }

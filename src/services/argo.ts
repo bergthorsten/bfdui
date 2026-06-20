@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { isDefaultBranch, isReservedEnvironment } from "@/domain/environments";
+import { execCli } from "@/services/cli";
 import type { ConfigService } from "@/services/config";
 import type {
   ArgoAutoSync,
   ConnectionResult,
   DevDeployment,
 } from "@/types/bfd";
-
-const execFileAsync = promisify(execFile);
 
 const TICKET_KEY_PREFIX_PATTERN = /^([A-Z]+-[0-9]+)-/;
 
@@ -83,7 +80,7 @@ export class ArgoService {
       args.push("--kube-context", argo.devContext);
     }
 
-    const { stdout } = await execFileAsync("argocd", args, { timeout: 20_000 });
+    const { stdout } = await execCli("argocd", args, { timeout: 20_000 });
     const parsed = JSON.parse(stdout) as unknown;
     if (!Array.isArray(parsed)) {
       throw new Error("ArgoCD returned an unexpected response shape.");
@@ -167,5 +164,22 @@ export function ticketKeyFromBranch(branch: string | null): string | null {
 }
 
 function messageOf(error: unknown): string {
+  const output = outputOf(error);
+  if (output) {
+    return output;
+  }
   return error instanceof Error ? error.message : String(error);
+}
+
+function outputOf(error: unknown): string | null {
+  const candidate = error as { stderr?: unknown; stdout?: unknown };
+  return (
+    [candidate.stderr, candidate.stdout]
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && Boolean(value.trim())
+      )
+      .map((value) => value.trim())
+      .join("\n") || null
+  );
 }

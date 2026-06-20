@@ -9,6 +9,7 @@ import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const config: ForgeConfig = {
   packagerConfig: {
+    appBundleId: "de.bergfreunde.bfd-desktop",
     asar: true,
   },
   rebuildConfig: {},

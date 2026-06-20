@@ -1,5 +1,109 @@
-import { describe, expect, test } from "vitest";
-import { parseArgoApplications, ticketKeyFromBranch } from "@/services/argo";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  ArgoService,
+  parseArgoApplications,
+  ticketKeyFromBranch,
+} from "@/services/argo";
+import { execCli } from "@/services/cli";
+import type { ConfigService } from "@/services/config";
+
+vi.mock("@/services/cli", () => ({
+  execCli: vi.fn(),
+}));
+
+const APP_CONFIG = {
+  argo: { app: "shop", devContext: "dev-cluster" },
+  github: { owner: "bergfreunde", repo: "shop", useGhCli: true },
+  jira: {
+    baseUrl: "https://jira.example.com/",
+    email: "user@example.com",
+    project: "PC",
+    sprintJql: "project = PC",
+  },
+  onboardingComplete: true,
+  repoPath: "/tmp/shop",
+};
+
+const JSON_PARSE_ERROR_PATTERN = /Unexpected token|not valid JSON/;
+
+function configService(config = APP_CONFIG): Pick<ConfigService, "get"> {
+  return {
+    get: () => config,
+  } as Pick<ConfigService, "get">;
+}
+
+const execCliMock = vi.mocked(execCli);
+
+describe("ArgoService", () => {
+  beforeEach(() => {
+    execCliMock.mockReset();
+  });
+
+  test("constructs argocd app list arguments with kube context", async () => {
+    execCliMock.mockResolvedValueOnce({ stdout: "[]", stderr: "" });
+
+    await new ArgoService(configService()).getDevDeployments();
+
+    expect(execCliMock).toHaveBeenCalledWith(
+      "argocd",
+      [
+        "app",
+        "list",
+        "-l",
+        "app=shop",
+        "-o",
+        "json",
+        "--core",
+        "--kube-context",
+        "dev-cluster",
+      ],
+      { timeout: 20_000 }
+    );
+  });
+
+  test("omits kube context when it is not configured", async () => {
+    execCliMock.mockResolvedValueOnce({ stdout: "[]", stderr: "" });
+
+    await new ArgoService(
+      configService({ ...APP_CONFIG, argo: { app: "shop", devContext: "" } })
+    ).getDevDeployments();
+
+    expect(execCliMock.mock.calls[0][1]).toEqual([
+      "app",
+      "list",
+      "-l",
+      "app=shop",
+      "-o",
+      "json",
+      "--core",
+    ]);
+  });
+
+  test("rejects invalid and non-array argocd JSON responses", async () => {
+    const service = new ArgoService(configService());
+
+    execCliMock.mockResolvedValueOnce({ stdout: "not-json", stderr: "" });
+    await expect(service.getDevDeployments()).rejects.toThrow(
+      JSON_PARSE_ERROR_PATTERN
+    );
+
+    execCliMock.mockResolvedValueOnce({ stdout: '{"items":[]}', stderr: "" });
+    await expect(service.getDevDeployments()).rejects.toThrow(
+      "ArgoCD returned an unexpected response shape."
+    );
+  });
+
+  test("surfaces command stderr during connection tests", async () => {
+    execCliMock.mockRejectedValueOnce({ stderr: "context deadline exceeded" });
+
+    await expect(
+      new ArgoService(configService()).testConnection()
+    ).resolves.toEqual({
+      message: "context deadline exceeded",
+      ok: false,
+    });
+  });
+});
 
 describe("parseArgoApplications", () => {
   test("maps Argo applications to dev deployments", () => {
@@ -103,6 +207,34 @@ describe("parseArgoApplications", () => {
 
   test("skips applications without a destination namespace", () => {
     expect(parseArgoApplications([{}], "shop")).toEqual([]);
+  });
+
+  test("returns null age for invalid and future deployment dates", () => {
+    const deployments = parseArgoApplications(
+      [
+        {
+          spec: { destination: { namespace: "03" } },
+          status: { history: [{ deployedAt: "not-a-date" }] },
+        },
+        {
+          spec: { destination: { namespace: "04" } },
+          status: { history: [{ deployedAt: "2026-06-17T12:05:00Z" }] },
+        },
+      ],
+      "shop",
+      new Date("2026-06-17T12:00:00Z")
+    );
+
+    expect(deployments[0]).toMatchObject({
+      ageSeconds: null,
+      branch: null,
+      ticketKey: null,
+    });
+    expect(deployments[1]).toMatchObject({
+      ageSeconds: 0,
+      branch: null,
+      ticketKey: null,
+    });
   });
 });
 

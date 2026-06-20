@@ -141,6 +141,7 @@ describe("GitHubService", () => {
           number: 4830,
           state: "open",
           title: "PC-255: Fix search icon a11y",
+          updated_at: "2026-06-17T12:30:00Z",
         })
       )
       .mockResolvedValueOnce(
@@ -163,6 +164,7 @@ describe("GitHubService", () => {
       source: "enriched",
       state: "open",
       title: "PC-255: Fix search icon a11y",
+      updatedAt: "2026-06-17T12:30:00Z",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/repos/bergfreunde/shop/pulls/4830",
@@ -192,6 +194,7 @@ describe("GitHubService", () => {
 
     expect(info.pullRequests[0]).toMatchObject({
       approved: false,
+      mergedAt: "2026-06-17T12:00:00Z",
       state: "merged",
     });
   });

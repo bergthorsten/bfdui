@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/actions/bfd";
 import { openExternalLink } from "@/actions/shell";
 import DeploymentDialog from "@/components/deployment-dialog";
+import { rankWorkflowTargets } from "@/components/deployment-dialog-helpers";
 import type {
   DeploymentBatch,
   DevDeployment,
@@ -19,6 +20,9 @@ import type {
 const DEPLOY_BUTTON_PATTERN = /deploy/i;
 const OPEN_RUN_BUTTON_PATTERN = /open run/i;
 const PERFORM_TESTS_SWITCH_PATTERN = /perform tests/i;
+const OCCUPIED_WARNING_PATTERN = /Current branch: PC-999-owned-system/;
+const RESERVED_WARNING_PATTERN = /dev-20 is reserved in BFD/;
+const STAGING_WARNING_PATTERN = /Staging is shared/;
 
 vi.mock("@/actions/bfd", () => ({
   createDeployment: vi.fn(),
@@ -57,13 +61,15 @@ vi.mock("@/components/ui/dialog", async () => {
 
 function workflowTarget(
   name: string,
-  inputs: WorkflowTarget["inputs"] = []
+  inputs: WorkflowTarget["inputs"] = [],
+  affectedPathGlobs: string[] = []
 ): WorkflowTarget {
   const aliases = [
     name,
     name.split("-").filter(Boolean).slice(1).join("-"),
   ].filter(Boolean);
   return {
+    affectedPathGlobs,
     aliases,
     fileName: `${name}.yml`,
     group: name.split("-")[0] ?? "app",
@@ -137,14 +143,14 @@ const failedBatch: DeploymentBatch = {
   ],
 };
 
-function renderDialog() {
+function renderDialog(options: { deployments?: DevDeployment[] } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <DeploymentDialog
-        deployments={deployments}
+        deployments={options.deployments ?? deployments}
         onOpenChange={vi.fn()}
         open={true}
         row={row}
@@ -238,4 +244,105 @@ test("selects multiple workflow targets, sends parsed inputs, and shows run link
   expect(openExternalLink).toHaveBeenCalledWith(
     "https://github.com/bergfreunde/shop/actions/runs/123"
   );
+});
+
+test("allows deselecting every workflow and disables deploy", async () => {
+  const user = userEvent.setup();
+  renderDialog();
+
+  await user.click(await screen.findByText("shop -> app-shop"));
+
+  expect(screen.getByText("0 selected")).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: DEPLOY_BUTTON_PATTERN })
+  ).toBeDisabled();
+});
+
+test("prioritizes free targets and shows selected target warnings", async () => {
+  const user = userEvent.setup();
+  renderDialog({
+    deployments: [
+      {
+        ageSeconds: 300,
+        app: "shop",
+        autoSync: "off",
+        branch: "PC-999-owned-system",
+        deployedAt: "2026-06-18T09:55:00.000Z",
+        environment: "01",
+        health: "Healthy",
+        isFree: false,
+        reserved: false,
+        sync: "Synced",
+        ticketKey: "PC-999",
+      },
+      {
+        ageSeconds: null,
+        app: "shop",
+        autoSync: "off",
+        branch: "master",
+        deployedAt: null,
+        environment: "04",
+        health: "Healthy",
+        isFree: true,
+        reserved: false,
+        sync: "Synced",
+        ticketKey: null,
+      },
+    ],
+  });
+
+  expect(await screen.findByText("shop -> app-shop")).toBeInTheDocument();
+  const targetOptions = within(
+    screen.getByRole("listbox", { name: "Target environment" })
+  ).getAllByRole("option");
+  expect(targetOptions[0]).toHaveTextContent("dev-04");
+  expect(targetOptions[0]).toHaveTextContent("free");
+
+  await user.click(screen.getByText("dev-01"));
+  expect(screen.getByText("System is not free")).toBeInTheDocument();
+  expect(screen.getByText(OCCUPIED_WARNING_PATTERN)).toBeInTheDocument();
+
+  await user.click(screen.getByText("dev-20"));
+  expect(screen.getByText("Reserved system")).toBeInTheDocument();
+  expect(screen.getByText(RESERVED_WARNING_PATTERN)).toBeInTheDocument();
+
+  await user.click(
+    targetOptions.find((option) => option.textContent?.includes("staging")) ??
+      targetOptions.at(-1) ??
+      targetOptions[0]
+  );
+  expect(screen.getByText("Staging target")).toBeInTheDocument();
+  expect(screen.getByText(STAGING_WARNING_PATTERN)).toBeInTheDocument();
+});
+
+test("boosts workflow ranking from PR changed files and affected path globs", () => {
+  const ranked = rankWorkflowTargets(
+    [
+      workflowTarget("app-shop"),
+      workflowTarget("app-services-php", [], ["apps/services-php/**"]),
+    ],
+    {
+      ...row,
+      branches: [],
+      pullRequests: [
+        {
+          baseRef: "master",
+          changedFiles: ["apps/services-php/src/index.php"],
+          headRef: "PC-123-services",
+          headSha: "pr-sha",
+          isDraft: false,
+          number: 123,
+          source: "github",
+          state: "open",
+          title: "Change services",
+          url: "https://github.com/bergfreunde/shop/pull/123",
+        },
+      ],
+    }
+  );
+
+  expect(ranked.map((target) => target.name)).toEqual([
+    "app-services-php",
+    "app-shop",
+  ]);
 });

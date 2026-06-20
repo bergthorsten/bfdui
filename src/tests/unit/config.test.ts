@@ -84,18 +84,19 @@ describe("ConfigService", () => {
     expect(service.secretStatus()).toMatchObject({ jiraToken: false });
   });
 
-  test("does not write secrets when encryption is unavailable", () => {
+  test("uses temporary unsafe secret storage when encryption is unavailable", () => {
     const service = new ConfigService();
     electronState.encryptionAvailable = false;
 
-    expect(() => service.setSecret("jiraToken", "token-123")).toThrow(
-      "Secret storage encryption is not available"
-    );
+    service.setSecret("jiraToken", "token-123");
+
     expect(
       existsSync(
         path.join(electronState.userDataDir, "secrets", "jiraToken.enc")
       )
     ).toBe(false);
+    expect(service.getSecret("jiraToken")).toBe("token-123");
+    expect(service.secretStatus()).toMatchObject({ jiraToken: true });
   });
 
   test("does not read encrypted secrets when encryption is unavailable", () => {

@@ -1,10 +1,9 @@
-import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { os } from "@orpc/server";
 import { ArgoService } from "@/services/argo";
+import { execCli } from "@/services/cli";
 import { ConfigService } from "@/services/config";
 import { DeploymentService } from "@/services/deployments";
 import { GitHubService } from "@/services/github";
@@ -15,6 +14,7 @@ import type {
   DeploymentBatch,
   EnvironmentCheckResult,
   EnvironmentToolCheck,
+  SaveConfigResult,
 } from "@/types/bfd";
 import {
   createDeploymentInputSchema,
@@ -26,7 +26,6 @@ import {
   testConnectionInputSchema,
 } from "./schemas";
 
-const execFileAsync = promisify(execFile);
 const config = new ConfigService();
 const argo = new ArgoService(config);
 const github = new GitHubService(config);
@@ -61,22 +60,27 @@ export const checkEnvironment = os.handler(async () => {
 export const saveConfig = os
   .input(saveConfigInputSchema)
   .handler(({ input }) => {
-    const updated = config.update(input.config);
     const secrets = input.secrets;
+    const warnings: string[] = [];
 
     if (secrets?.clearJiraToken) {
       config.clearSecret("jiraToken");
     } else if (secrets?.jiraToken) {
-      config.setSecret("jiraToken", secrets.jiraToken);
+      trySetSecret("jiraToken", secrets.jiraToken, warnings);
     }
 
     if (secrets?.clearGithubToken) {
       config.clearSecret("githubToken");
     } else if (secrets?.githubToken) {
-      config.setSecret("githubToken", secrets.githubToken);
+      trySetSecret("githubToken", secrets.githubToken, warnings);
     }
 
-    return { config: updated, secrets: config.secretStatus() };
+    const updated = config.update(input.config);
+    return {
+      config: updated,
+      secrets: config.secretStatus(),
+      warning: warnings.length ? warnings.join(" ") : undefined,
+    } satisfies SaveConfigResult;
   });
 
 export const testConnection = os
@@ -101,6 +105,11 @@ export const testConnection = os
 export const getSprintTickets = os.handler(() => {
   const { sprintJql } = config.get().jira;
   return jira.search(sprintJql);
+});
+
+export const getActiveSprint = os.handler(() => {
+  const { sprintJql } = config.get().jira;
+  return jira.getActiveSprint(sprintJql);
 });
 
 export const searchTickets = os
@@ -147,6 +156,22 @@ export const refreshDeploymentBatch = os
   .handler(({ input }) => deployments.refreshDeploymentBatch(input.id));
 
 type TestConfigProvider = Pick<ConfigService, "get" | "getSecret">;
+
+function trySetSecret(
+  key: "githubToken" | "jiraToken",
+  value: string,
+  warnings: string[]
+): void {
+  try {
+    config.setSecret(key, value);
+  } catch (error) {
+    warnings.push(messageOf(error));
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function isActiveDeploymentBatch(batch: DeploymentBatch): boolean {
   return !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState);
@@ -288,7 +313,7 @@ async function runCli(
   timeout: number
 ): Promise<{ missing: boolean; ok: boolean; output: string }> {
   try {
-    const { stdout, stderr } = await execFileAsync(command, args, { timeout });
+    const { stdout, stderr } = await execCli(command, args, { timeout });
     return { missing: false, ok: true, output: combineOutput(stdout, stderr) };
   } catch (error) {
     const candidate = error as {
