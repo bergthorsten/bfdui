@@ -151,6 +151,10 @@ export const getDeploymentBatch = os
   .input(deploymentBatchInputSchema)
   .handler(({ input }) => deployments.getDeploymentBatch(input.id));
 
+export const deleteDeploymentBatch = os
+  .input(deploymentBatchInputSchema)
+  .handler(({ input }) => deployments.deleteDeploymentBatch(input.id));
+
 export const refreshDeploymentBatch = os
   .input(deploymentBatchInputSchema)
   .handler(({ input }) => deployments.refreshDeploymentBatch(input.id));

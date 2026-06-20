@@ -34,6 +34,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 vi.mock("@/actions/bfd", () => ({
   createDeployment: vi.fn(),
+  deleteDeploymentBatch: vi.fn(),
   getActiveSprint: vi.fn(),
   getBfdConfig: vi.fn(),
   getDeploymentBatches: vi.fn(),

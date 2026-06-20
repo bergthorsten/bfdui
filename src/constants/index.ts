@@ -7,6 +7,10 @@ export const IPC_CHANNELS = {
   START_ORPC_SERVER: "start-orpc-server",
 };
 
+export const APP_EVENTS = {
+  OPEN_DEPLOYMENT_HISTORY: "bfd:open-deployment-history",
+};
+
 export const ENVIRONMENT_VARIABLES = {
   NODE_ENV: process.env.NODE_ENV,
 };

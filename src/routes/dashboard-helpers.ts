@@ -1,3 +1,4 @@
+import { deploymentPollingInterval } from "@/components/deployment-dialog-helpers";
 import { MOCK_DEPLOYMENTS } from "@/data/mock";
 import type {
   DeploymentBatch,
@@ -11,6 +12,7 @@ import type {
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
+const DEPLOYMENT_HISTORY_RETENTION_MS = DAY_MS;
 const TERMINAL_DEPLOYMENT_STATES = new Set([
   "cancelled",
   "failure",
@@ -363,6 +365,34 @@ export function hasActiveDeploymentBatches(
       (batch) => !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState)
     )
   );
+}
+
+export function deploymentBatchesPollingInterval(
+  batches: DeploymentBatch[] | undefined
+): false | number {
+  const intervals = batches
+    ?.map(
+      (batch) =>
+        deploymentPollingInterval(batch) ||
+        deploymentHistoryExpiryInterval(batch)
+    )
+    .filter((interval): interval is number => interval !== false);
+
+  if (!intervals?.length) {
+    return false;
+  }
+  return Math.min(...intervals);
+}
+
+function deploymentHistoryExpiryInterval(
+  batch: DeploymentBatch
+): false | number {
+  if (!TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState)) {
+    return false;
+  }
+  const expiresIn =
+    batch.updatedAt + DEPLOYMENT_HISTORY_RETENTION_MS - Date.now();
+  return Math.max(1000, expiresIn);
 }
 
 function messageOf(error: unknown): string {

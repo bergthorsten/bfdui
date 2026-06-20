@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  CircleCheck,
+  CircleX,
   ExternalLink,
   Loader2,
   Rocket,
@@ -22,10 +24,11 @@ import {
 } from "@/actions/bfd";
 import { openExternalLink } from "@/actions/shell";
 import {
+  deploymentPollingInterval,
+  deploymentPollingLabel,
   ENVIRONMENT_INPUT_NAMES,
   filterWorkflowTargets,
   groupWorkflowTargets,
-  isDeploymentActive,
   normalizeWorkflowInputValues,
   preferredWorkflowAlias,
   prioritizedTargets,
@@ -40,6 +43,7 @@ import {
   workflowDispatchInputs,
   workflowInputGroups,
 } from "@/components/deployment-dialog-helpers";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,6 +118,29 @@ function deploymentStateTone(
     default:
       return "muted";
   }
+}
+
+function terminalDeploymentTitle(state: DeploymentRunState): string | null {
+  switch (state) {
+    case "success":
+      return "Deployment succeeded";
+    case "failure":
+      return "Deployment failed";
+    case "cancelled":
+      return "Deployment cancelled";
+    case "timed-out":
+      return "Deployment timed out";
+    default:
+      return null;
+  }
+}
+
+function formattedTime(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function messageOf(error: unknown): string {
@@ -621,11 +648,15 @@ function WorkflowSummary({
 
 function DeploymentProgress({
   batch,
+  dataUpdatedAt,
   error,
+  isFetching,
   isLoading,
 }: {
   batch: DeploymentBatch | null | undefined;
+  dataUpdatedAt: number;
   error: unknown;
+  isFetching: boolean;
   isLoading: boolean;
 }) {
   if (isLoading) {
@@ -654,7 +685,15 @@ function DeploymentProgress({
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="font-medium text-sm">Deployment run</div>
+        <div className="grid gap-0.5">
+          <div className="font-medium text-sm">Deployment run</div>
+          <div className="text-muted-foreground text-xs">
+            {dataUpdatedAt
+              ? `Last checked ${formattedTime(dataUpdatedAt)}. `
+              : "Waiting for first status check. "}
+            {isFetching ? "Refreshing now..." : deploymentPollingLabel(batch)}
+          </div>
+        </div>
         <Badge variant={deploymentStateTone(batch.aggregateState)}>
           {deploymentStateLabel(batch.aggregateState)}
         </Badge>
@@ -697,6 +736,79 @@ function DeploymentProgress({
         ))}
       </div>
     </div>
+  );
+}
+
+function DeploymentFeedback({
+  batch,
+  createError,
+  isCreating,
+}: {
+  batch: DeploymentBatch | null | undefined;
+  createError: unknown;
+  isCreating: boolean;
+}) {
+  if (isCreating) {
+    return null;
+  }
+
+  if (createError) {
+    return (
+      <Alert variant="danger">
+        <AlertDescription>
+          <div className="font-medium">Deployment failed to start</div>
+          <div className="text-xs">{messageOf(createError)}</div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!batch) {
+    return null;
+  }
+
+  const terminalTitle = terminalDeploymentTitle(batch.aggregateState);
+  if (terminalTitle) {
+    const failedWorkflows = batch.workflows.filter((workflow) =>
+      ["failure", "timed-out", "cancelled"].includes(workflow.state)
+    );
+    return (
+      <Alert
+        variant={batch.aggregateState === "success" ? "success" : "danger"}
+      >
+        <AlertDescription>
+          <div className="flex items-center gap-2 font-medium">
+            {batch.aggregateState === "success" ? (
+              <CircleCheck className="size-4" />
+            ) : (
+              <CircleX className="size-4" />
+            )}
+            {terminalTitle}
+          </div>
+          <div className="mt-1 text-xs">
+            {failedWorkflows.length > 0
+              ? `${failedWorkflows.length} workflow${failedWorkflows.length === 1 ? "" : "s"} need attention.`
+              : `${batch.workflows.length} workflow${batch.workflows.length === 1 ? "" : "s"} finished successfully.`}
+          </div>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert variant="success">
+      <AlertDescription>
+        <div className="flex items-center gap-2 font-medium">
+          <CircleCheck className="size-4" />
+          Deployment started successfully
+        </div>
+        <div className="mt-1 text-xs">
+          {batch.workflows.length} workflow
+          {batch.workflows.length === 1 ? "" : "s"} dispatched to{" "}
+          {batch.environment}.
+        </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -765,8 +877,7 @@ export default function DeploymentDialog({
     enabled: Boolean(deploymentBatchId),
     queryFn: () => refreshDeploymentBatch(deploymentBatchId ?? ""),
     queryKey: ["bfd", "deployment", deploymentBatchId],
-    refetchInterval: (query) =>
-      isDeploymentActive(query.state.data) ? 5000 : false,
+    refetchInterval: (query) => deploymentPollingInterval(query.state.data),
   });
   const createDeploymentMutation = useMutation({
     mutationFn: createDeployment,
@@ -917,9 +1028,17 @@ export default function DeploymentDialog({
               workflows={selectedWorkflowTargets}
             />
 
+            <DeploymentFeedback
+              batch={deploymentBatchQuery.data}
+              createError={createDeploymentMutation.error}
+              isCreating={createDeploymentMutation.isPending}
+            />
+
             <DeploymentProgress
               batch={deploymentBatchQuery.data}
+              dataUpdatedAt={deploymentBatchQuery.dataUpdatedAt}
               error={deploymentBatchQuery.error}
+              isFetching={deploymentBatchQuery.isFetching}
               isLoading={deploymentBatchQuery.isLoading}
             />
 
@@ -927,17 +1046,6 @@ export default function DeploymentDialog({
               <div className="border-amber-500/60 border-l-2 pl-4 text-amber-700 text-sm dark:text-amber-300">
                 <div className="mb-1 font-medium">{warning.title}</div>
                 <p className="text-xs leading-relaxed">{warning.body}</p>
-              </div>
-            )}
-
-            {createDeploymentMutation.error && (
-              <div className="border-destructive/60 border-l-2 pl-4 text-destructive text-sm">
-                <div className="mb-1 font-medium">
-                  Deployment failed to start
-                </div>
-                <p className="text-xs leading-relaxed">
-                  {messageOf(createDeploymentMutation.error)}
-                </p>
               </div>
             )}
           </aside>

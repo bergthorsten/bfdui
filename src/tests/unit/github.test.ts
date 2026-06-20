@@ -517,6 +517,22 @@ describe("GitHubService", () => {
     });
   });
 
+  test("reports malformed successful GitHub responses", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("not-json", {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      })
+    );
+
+    await expect(
+      new GitHubService(configService()).testConnection()
+    ).resolves.toEqual({
+      message: "GitHub returned an invalid JSON response.",
+      ok: false,
+    });
+  });
+
   test("dispatches workflows and lists workflow_dispatch runs", async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(null, { status: 204 }))

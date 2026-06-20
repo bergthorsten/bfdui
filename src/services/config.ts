@@ -165,7 +165,7 @@ export class ConfigService {
   }
 
   private hasSecret(key: SecretKey): boolean {
-    return Boolean(this.getSecret(key) ?? this.getUnsafeSecret(key));
+    return Boolean(this.getSecret(key));
   }
 
   private deleteIfExists(file: string): void {

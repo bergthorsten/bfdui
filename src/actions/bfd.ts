@@ -69,6 +69,10 @@ export function getDeploymentBatch(id: string) {
   return ipc.client.bfd.getDeploymentBatch({ id });
 }
 
+export function deleteDeploymentBatch(id: string) {
+  return ipc.client.bfd.deleteDeploymentBatch({ id });
+}
+
 export function refreshDeploymentBatch(id: string) {
   return ipc.client.bfd.refreshDeploymentBatch({ id });
 }

@@ -24,6 +24,7 @@ const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
   "success",
   "timed-out",
 ]);
+const DEPLOYMENT_POLLING_TIMEOUT_MS = 15 * 60_000;
 
 export { ENVIRONMENT_INPUT_NAMES };
 
@@ -259,6 +260,36 @@ export function isDeploymentActive(
   return Boolean(
     batch && !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState)
   );
+}
+
+export function deploymentPollingInterval(
+  batch: DeploymentBatch | null | undefined
+): false | number {
+  if (!isDeploymentActive(batch)) {
+    return false;
+  }
+
+  const elapsedMs = Date.now() - batch.createdAt;
+  if (elapsedMs >= DEPLOYMENT_POLLING_TIMEOUT_MS) {
+    return false;
+  }
+  if (elapsedMs < 60_000) {
+    return 15_000;
+  }
+  if (elapsedMs < 2 * 60_000) {
+    return 10_000;
+  }
+  return 8000;
+}
+
+export function deploymentPollingLabel(batch: DeploymentBatch): string {
+  const interval = deploymentPollingInterval(batch);
+  if (interval === false) {
+    return isDeploymentActive(batch)
+      ? "Polling stopped after 15 minutes. Refresh manually to check again."
+      : "Polling stopped because the deployment reached a final state.";
+  }
+  return `Polling every ${interval / 1000}s until this deployment finishes.`;
 }
 
 export function sourceCommitShaForBranch(

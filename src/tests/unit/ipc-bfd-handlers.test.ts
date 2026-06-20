@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
   const workflows = { discoverTargets: vi.fn(), recordUsage: vi.fn() };
   const deployments = {
     createDeployment: vi.fn(),
+    deleteDeploymentBatch: vi.fn(),
     getDeploymentBatch: vi.fn(),
     listDeploymentBatches: vi.fn(),
     refreshDeploymentBatch: vi.fn(),

@@ -54,9 +54,10 @@ interface NormalizedDeploymentIntent {
   workflows: NormalizedDeploymentWorkflow[];
 }
 
-const DEFAULT_RUN_TIMEOUT_MS = 45 * 60_000;
+const DEFAULT_RUN_TIMEOUT_MS = 15 * 60_000;
 const DISPATCH_MATCH_WINDOW_MS = 30_000;
 const MAX_HISTORY_BATCHES = 100;
+const HISTORY_RETENTION_MS = 24 * 60 * 60_000;
 const WORKFLOW_FILE_EXTENSION_PATTERN = /\.ya?ml$/i;
 const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
   "cancelled",
@@ -135,6 +136,18 @@ export class DeploymentService {
 
   listDeploymentBatches(): DeploymentBatch[] {
     return this.readHistory().toSorted((a, b) => b.createdAt - a.createdAt);
+  }
+
+  deleteDeploymentBatch(id: string): boolean {
+    const batches = this.readHistory();
+    const batch = batches.find((candidate) => candidate.id === id);
+    if (!(batch && isTerminalDeploymentState(batch.aggregateState))) {
+      return false;
+    }
+
+    const next = batches.filter((batch) => batch.id !== id);
+    this.writeHistory(next);
+    return true;
   }
 
   async refreshDeploymentBatch(id: string): Promise<DeploymentBatch> {
@@ -348,9 +361,23 @@ export class DeploymentService {
 
     try {
       const parsed = JSON.parse(readFileSync(this.historyPath, "utf8"));
-      return Array.isArray(parsed)
-        ? parsed.filter(isDeploymentBatch).slice(0, MAX_HISTORY_BATCHES)
+      const rawBatches = Array.isArray(parsed)
+        ? parsed.filter(isDeploymentBatch)
         : [];
+      const batches = pruneExpiredDeploymentBatches(
+        rawBatches,
+        this.now()
+      ).slice(0, MAX_HISTORY_BATCHES);
+
+      if (batches.length !== rawBatches.length) {
+        try {
+          this.writeHistory(batches);
+        } catch {
+          // Keep returning readable history even if opportunistic pruning fails.
+        }
+      }
+
+      return batches;
     } catch {
       return [];
     }
@@ -364,6 +391,10 @@ export class DeploymentService {
       .toSorted((a, b) => b.createdAt - a.createdAt)
       .slice(0, MAX_HISTORY_BATCHES);
 
+    this.writeHistory(batches);
+  }
+
+  private writeHistory(batches: DeploymentBatch[]): void {
     mkdirSync(path.dirname(this.historyPath), { recursive: true });
     writeFileSync(this.historyPath, JSON.stringify(batches, null, 2), "utf8");
   }
@@ -536,6 +567,19 @@ export function aggregateDeploymentState(
 
 function isTerminalDeploymentState(state: DeploymentRunState): boolean {
   return TERMINAL_DEPLOYMENT_STATES.has(state);
+}
+
+function pruneExpiredDeploymentBatches(
+  batches: DeploymentBatch[],
+  now: number
+): DeploymentBatch[] {
+  return batches.filter(
+    (batch) =>
+      !(
+        isTerminalDeploymentState(batch.aggregateState) &&
+        batch.updatedAt <= now - HISTORY_RETENTION_MS
+      )
+  );
 }
 
 function terminalNotificationTitle(state: DeploymentRunState): string | null {

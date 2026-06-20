@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -41,6 +42,7 @@ function target(
 
 function serviceFor(options: {
   github?: Partial<ConstructorParameters<typeof DeploymentService>[0]>;
+  historyPath?: string;
   now?: () => number;
   targets?: WorkflowTarget[];
 }) {
@@ -60,18 +62,21 @@ function serviceFor(options: {
     recordUsage: vi.fn(),
   };
   const notifier = { notify: vi.fn() };
-  const service = new DeploymentService(github, workflows, {
-    historyPath: path.join(
+  const historyPath =
+    options.historyPath ??
+    path.join(
       tmpdir(),
       `bfd-deployments-${Math.random().toString(36).slice(2)}.json`
-    ),
+    );
+  const service = new DeploymentService(github, workflows, {
+    historyPath,
     idFactory: () => "batch-1",
     notifier,
     now: options.now ?? (() => BASE_TIME),
     runTimeoutMs: 60_000,
   });
 
-  return { github, notifier, service, workflows };
+  return { github, historyPath, notifier, service, workflows };
 }
 
 afterEach(() => {
@@ -228,5 +233,58 @@ describe("DeploymentService", () => {
     ).resolves.toMatchObject({
       aggregateState: "timed-out",
     });
+  });
+
+  test("prunes terminal deployment history after 24 hours", () => {
+    const historyPath = path.join(
+      tmpdir(),
+      `bfd-deployments-${Math.random().toString(36).slice(2)}.json`
+    );
+    const staleTerminalBatch = {
+      aggregateState: "success",
+      branch: "PC-123-shop",
+      createdAt: BASE_TIME - 48 * 60 * 60_000,
+      environment: "04",
+      id: "stale-terminal",
+      updatedAt: BASE_TIME - 25 * 60 * 60_000,
+      workflows: [
+        {
+          dispatchRequestedAt: BASE_TIME - 48 * 60 * 60_000,
+          environment: "04",
+          fileName: "app-shop.yml",
+          inputs: {},
+          state: "success",
+          targetName: "app-shop",
+          workflowPath: ".github/workflows/app-shop.yml",
+        },
+      ],
+    };
+    const oldActiveBatch = {
+      ...staleTerminalBatch,
+      aggregateState: "in-progress",
+      id: "old-active",
+      workflows: [{ ...staleTerminalBatch.workflows[0], state: "in-progress" }],
+    };
+    const freshTerminalBatch = {
+      ...staleTerminalBatch,
+      id: "fresh-terminal",
+      updatedAt: BASE_TIME - 23 * 60 * 60_000,
+    };
+    writeFileSync(
+      historyPath,
+      JSON.stringify([staleTerminalBatch, oldActiveBatch, freshTerminalBatch]),
+      "utf8"
+    );
+    const { service } = serviceFor({ historyPath, now: () => BASE_TIME });
+
+    expect(service.listDeploymentBatches().map((batch) => batch.id)).toEqual([
+      "old-active",
+      "fresh-terminal",
+    ]);
+    expect(
+      JSON.parse(readFileSync(historyPath, "utf8")).map(
+        (batch: { id: string }) => batch.id
+      )
+    ).toEqual(["old-active", "fresh-terminal"]);
   });
 });

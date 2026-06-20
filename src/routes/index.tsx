@@ -45,10 +45,10 @@ import {
   dashboardEmptyMessage,
   dashboardResultLabel,
   dashboardUpdatedLabel,
+  deploymentBatchesPollingInterval,
   developmentStateForTickets,
   EMPTY_SPRINT_FILTER,
   githubFallbackDifferenceCount,
-  hasActiveDeploymentBatches,
   integrationStatusFromDevSystemsQuery,
   refetchDevelopmentQueries,
   rowMatchesSprintFilter,
@@ -359,7 +359,7 @@ function Dashboard() {
     queryKey: ["bfd", "deployments"],
     queryFn: getDeploymentBatches,
     refetchInterval: (query) =>
-      hasActiveDeploymentBatches(query.state.data) ? 5000 : false,
+      deploymentBatchesPollingInterval(query.state.data),
     retry: false,
   });
   const devDeployments = deploymentsQuery.data ?? [];
