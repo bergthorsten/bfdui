@@ -24,6 +24,19 @@ interface GitHubWorkflowRunsResponse {
   workflow_runs?: GitHubWorkflowRunResponse[];
 }
 
+interface GitHubCommitCompareResponse {
+  ahead_by?: number;
+  base_commit?: { sha?: string };
+  commits?: GitHubCommitListItemResponse[];
+  html_url?: string;
+  status?: string;
+}
+
+interface GitHubCommitListItemResponse {
+  html_url?: string;
+  sha?: string;
+}
+
 interface GitHubWorkflowRunResponse {
   conclusion?: string | null;
   created_at?: string;
@@ -46,6 +59,14 @@ export interface GitHubWorkflowRunSummary {
   status: string | null;
   updatedAt: string;
   url: string;
+}
+
+export interface GitHubBranchFreshness {
+  aheadBy: number | null;
+  latestCommitSha: string | null;
+  method: "compare" | "since-date";
+  status: string;
+  url: string | null;
 }
 
 interface GitHubIssueSearchResponse {
@@ -245,6 +266,52 @@ export class GitHubService {
     );
 
     return (response.workflow_runs ?? []).flatMap(githubWorkflowRunToSummary);
+  }
+
+  async getBranchFreshness(input: {
+    branch: string;
+    deployedAt: string | null;
+    deployedRevision?: string | null;
+  }): Promise<GitHubBranchFreshness | null> {
+    const token = await this.token();
+    if (!token) {
+      return null;
+    }
+
+    if (input.deployedRevision) {
+      const comparison = await this.request<GitHubCommitCompareResponse>(
+        `${this.repoApiPath()}/compare/${encodeURIComponent(input.deployedRevision)}...${encodeURIComponent(input.branch)}`,
+        token
+      );
+      return {
+        aheadBy: comparison.ahead_by ?? null,
+        latestCommitSha: comparison.commits?.at(-1)?.sha ?? null,
+        method: "compare",
+        status: comparison.status ?? "unknown",
+        url: comparison.html_url ?? null,
+      };
+    }
+
+    if (!input.deployedAt) {
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      per_page: "100",
+      sha: input.branch,
+      since: input.deployedAt,
+    });
+    const commits = await this.request<GitHubCommitListItemResponse[]>(
+      `${this.repoApiPath()}/commits?${params}`,
+      token
+    );
+    return {
+      aheadBy: commits.length,
+      latestCommitSha: commits[0]?.sha ?? null,
+      method: "since-date",
+      status: commits.length > 0 ? "ahead" : "identical",
+      url: commits[0]?.html_url ?? null,
+    };
   }
 
   private async enrichDevelopmentInfoWithToken(

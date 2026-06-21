@@ -33,6 +33,8 @@ export interface DevDeployment {
   branch: string | null;
   /** ISO timestamp of the latest deploy, from status.history[-1].deployedAt. */
   deployedAt: string | null;
+  /** Git revision reported by ArgoCD for the currently synced application. */
+  deployedRevision?: string | null;
   /** Destination namespace == dev system, e.g. "04", "oms". */
   environment: string;
   health: ArgoHealth;

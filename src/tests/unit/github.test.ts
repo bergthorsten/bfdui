@@ -210,6 +210,64 @@ describe("GitHubService", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  test("compares a deployed revision with the current branch", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ahead_by: 2,
+        commits: [{ sha: "def456" }, { sha: "fed789" }],
+        html_url: "https://github.com/bergfreunde/shop/compare/abc...branch",
+        status: "ahead",
+      })
+    );
+
+    const freshness = await new GitHubService(
+      configService()
+    ).getBranchFreshness({
+      branch: "PC-255-fix-search-a11y",
+      deployedAt: "2026-06-17T11:59:00Z",
+      deployedRevision: "abc123",
+    });
+
+    expect(freshness).toMatchObject({
+      aheadBy: 2,
+      latestCommitSha: "fed789",
+      method: "compare",
+      status: "ahead",
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/repos/bergfreunde/shop/compare/abc123...PC-255-fix-search-a11y"
+    );
+  });
+
+  test("falls back to commits since deployed date without a deployed revision", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          html_url: "https://github.com/bergfreunde/shop/commit/def456",
+          sha: "def456",
+        },
+      ])
+    );
+
+    const freshness = await new GitHubService(
+      configService()
+    ).getBranchFreshness({
+      branch: "PC-255-fix-search-a11y",
+      deployedAt: "2026-06-17T11:59:00Z",
+    });
+
+    expect(freshness).toMatchObject({
+      aheadBy: 1,
+      latestCommitSha: "def456",
+      method: "since-date",
+      status: "ahead",
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/commits?");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "sha=PC-255-fix-search-a11y"
+    );
+  });
+
   test("keeps Jira-only PR data when GitHub enrichment fails", async () => {
     const original = pullRequest({ approved: false });
     fetchMock.mockResolvedValueOnce(

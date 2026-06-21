@@ -6,6 +6,7 @@ import {
   REACT_DEVELOPER_TOOLS,
 } from "electron-devtools-installer";
 import { ipcContext } from "@/ipc/context";
+import { startMcpServer, stopMcpServer } from "@/services/mcp";
 import { IPC_CHANNELS, inDevelopment } from "./constants";
 import { getBasePath } from "./utils/path";
 
@@ -134,12 +135,21 @@ app.whenReady().then(async () => {
   try {
     createWindow();
     await setupORPC();
+    startMcpServer().catch((error) => {
+      console.error("Failed to start MCP server:", error);
+    });
     loadMainWindow();
     await installExtensions();
     checkForUpdates();
   } catch (error) {
     console.error("Error during app initialization:", error);
   }
+});
+
+app.on("before-quit", () => {
+  stopMcpServer().catch((error) => {
+    console.error("Failed to stop MCP server:", error);
+  });
 });
 
 //osX only

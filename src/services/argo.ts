@@ -33,6 +33,7 @@ interface ArgoApplication {
       deployedAt?: string;
     }>;
     sync?: {
+      revision?: string;
       status?: string;
     };
   };
@@ -113,6 +114,7 @@ export function parseArgoApplications(
         autoSync: autoSyncOf(parsed),
         branch,
         deployedAt,
+        deployedRevision: deployedRevisionOf(parsed),
         environment,
         health: parsed.status?.health?.status ?? "Unknown",
         isFree: isDefault && !reserved,
@@ -134,6 +136,10 @@ function latestDeployedAt(app: ArgoApplication): string | null {
   const history = app.status?.history ?? [];
   const latest = history.at(-1)?.deployedAt;
   return latest ? latest.replace(/^'+|'+$/g, "") : null;
+}
+
+function deployedRevisionOf(app: ArgoApplication): string | null {
+  return app.status?.sync?.revision ?? null;
 }
 
 function ageSeconds(deployedAt: string | null, now: Date): number | null {

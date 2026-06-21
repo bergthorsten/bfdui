@@ -121,7 +121,7 @@ describe("parseArgoApplications", () => {
           status: {
             health: { status: "Healthy" },
             history: [{ deployedAt: "2026-06-17T11:59:00Z" }],
-            sync: { status: "Synced" },
+            sync: { revision: "abc123", status: "Synced" },
           },
         },
       ],
@@ -136,6 +136,7 @@ describe("parseArgoApplications", () => {
         autoSync: "on",
         branch: "PC-255-fix-search-a11y",
         deployedAt: "2026-06-17T11:59:00Z",
+        deployedRevision: "abc123",
         environment: "04",
         health: "Healthy",
         isFree: false,

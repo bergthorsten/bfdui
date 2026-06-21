@@ -3,12 +3,18 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { os } from "@orpc/server";
 import { ArgoService } from "@/services/argo";
+import {
+  argo,
+  config,
+  deployments,
+  github,
+  jira,
+  workflows,
+} from "@/services/bfd-services";
 import { execCli } from "@/services/cli";
-import { ConfigService } from "@/services/config";
-import { DeploymentService } from "@/services/deployments";
+import type { ConfigService } from "@/services/config";
 import { GitHubService } from "@/services/github";
 import { JiraCloudService } from "@/services/jira";
-import { WorkflowService } from "@/services/workflows";
 import type {
   ConnectionResult,
   DeploymentBatch,
@@ -26,12 +32,6 @@ import {
   testConnectionInputSchema,
 } from "./schemas";
 
-const config = new ConfigService();
-const argo = new ArgoService(config);
-const github = new GitHubService(config);
-const jira = new JiraCloudService(config);
-const workflows = new WorkflowService(config);
-const deployments = new DeploymentService(github, workflows);
 const TERMINAL_DEPLOYMENT_STATES = new Set([
   "cancelled",
   "failure",
