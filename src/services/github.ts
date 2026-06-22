@@ -24,6 +24,10 @@ interface GitHubWorkflowRunsResponse {
   workflow_runs?: GitHubWorkflowRunResponse[];
 }
 
+interface GitHubWorkflowJobsResponse {
+  jobs?: GitHubWorkflowJobResponse[];
+}
+
 interface GitHubCommitCompareResponse {
   ahead_by?: number;
   base_commit?: { sha?: string };
@@ -49,6 +53,16 @@ interface GitHubWorkflowRunResponse {
   updated_at?: string;
 }
 
+interface GitHubWorkflowJobResponse {
+  conclusion?: string | null;
+  completed_at?: string | null;
+  html_url?: string;
+  id?: number;
+  name?: string;
+  started_at?: string | null;
+  status?: string | null;
+}
+
 export interface GitHubWorkflowRunSummary {
   conclusion: string | null;
   createdAt: string;
@@ -58,6 +72,16 @@ export interface GitHubWorkflowRunSummary {
   id: number;
   status: string | null;
   updatedAt: string;
+  url: string;
+}
+
+export interface GitHubWorkflowJobSummary {
+  completedAt: string | null;
+  conclusion: string | null;
+  id: number;
+  name: string;
+  startedAt: string | null;
+  status: string | null;
   url: string;
 }
 
@@ -266,6 +290,21 @@ export class GitHubService {
     );
 
     return (response.workflow_runs ?? []).flatMap(githubWorkflowRunToSummary);
+  }
+
+  async listWorkflowRunJobs(runId: number): Promise<GitHubWorkflowJobSummary[]> {
+    const token = await this.token();
+    if (!token) {
+      throw new Error(this.missingTokenMessage());
+    }
+
+    const params = new URLSearchParams({ filter: "latest", per_page: "100" });
+    const response = await this.request<GitHubWorkflowJobsResponse>(
+      `${this.repoApiPath()}/actions/runs/${runId}/jobs?${params}`,
+      token
+    );
+
+    return (response.jobs ?? []).flatMap(githubWorkflowJobToSummary);
   }
 
   async getBranchFreshness(input: {
@@ -600,6 +639,28 @@ function githubWorkflowRunToSummary(
       status: run.status ?? null,
       updatedAt: run.updated_at ?? "",
       url: run.html_url ?? "",
+    },
+  ];
+}
+
+function githubWorkflowJobToSummary(
+  job: GitHubWorkflowJobResponse
+): GitHubWorkflowJobSummary[] {
+  const id = job.id ?? 0;
+  const name = job.name ?? "";
+  if (id <= 0 || !name) {
+    return [];
+  }
+
+  return [
+    {
+      completedAt: job.completed_at ?? null,
+      conclusion: job.conclusion ?? null,
+      id,
+      name,
+      startedAt: job.started_at ?? null,
+      status: job.status ?? null,
+      url: job.html_url ?? "",
     },
   ];
 }

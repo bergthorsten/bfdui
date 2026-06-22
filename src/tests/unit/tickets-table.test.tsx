@@ -102,6 +102,17 @@ function renderTable() {
   );
 }
 
+function renderActiveOnlyTable() {
+  return render(
+    <TicketsTable
+      deploymentBatches={[{ ...deploymentBatch, ticketKey: "PC-10" }]}
+      deployments={[]}
+      github={{ owner: "bergfreunde", repo: "shop" }}
+      rows={[row("PC-10", "Later ticket")]}
+    />
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -150,4 +161,11 @@ test("opens ticket, pull request, dev system, and deployment run links", async (
   expect(openExternalLink).toHaveBeenLastCalledWith(
     "https://github.com/bergfreunde/shop/actions/runs/123"
   );
+});
+
+test("hides not deployed text while a deployment is active", () => {
+  renderActiveOnlyTable();
+
+  expect(screen.queryByText("not deployed")).not.toBeInTheDocument();
+  expect(screen.getByText(DEPLOY_RUNNING_PATTERN)).toBeInTheDocument();
 });

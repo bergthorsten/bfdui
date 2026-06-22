@@ -1,0 +1,92 @@
+name: Desktop Builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-builds.yml"
+      - "assets/**"
+      - "forge.config.ts"
+      - "package-lock.json"
+      - "package.json"
+      - "src/**"
+      - "vite.*.config.mts"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/desktop-builds.yml"
+      - "assets/**"
+      - "forge.config.ts"
+      - "package-lock.json"
+      - "package.json"
+      - "src/**"
+      - "vite.*.config.mts"
+
+jobs:
+  make-linux:
+    name: Make Linux installers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Linux installers
+        run: npm run make -- --platform=linux --arch=x64
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bfd-linux-x64
+          path: |
+            out/make/**/*.deb
+            out/make/**/*.rpm
+            out/make/**/*.zip
+          if-no-files-found: error
+
+  make-macos-arm64:
+    name: Make macOS ARM64 app
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build macOS ARM64 app
+        run: npm run make -- --platform=darwin --arch=arm64
+
+      - name: Upload macOS ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bfd-macos-arm64
+          path: |
+            out/make/**/*.zip
+          if-no-files-found: error

@@ -11,15 +11,22 @@ import { IPC_CHANNELS, inDevelopment } from "./constants";
 import { getBasePath } from "./utils/path";
 
 let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
+
+const WINDOW_HEIGHT = 860;
+const WINDOW_MIN_HEIGHT = 720;
+const WINDOW_MAX_HEIGHT = 1600;
 
 function createWindow() {
   const basePath = getBasePath();
   const preload = path.join(basePath, "preload.js");
   mainWindow = new BrowserWindow({
     width: 1280,
-    height: 920,
+    height: WINDOW_HEIGHT,
+    icon: process.platform === "darwin" ? undefined : appIconPath(),
     minWidth: 1200,
-    minHeight: 920,
+    minHeight: WINDOW_MIN_HEIGHT,
+    maxHeight: WINDOW_MAX_HEIGHT,
     webPreferences: {
       devTools: inDevelopment,
       contextIsolation: true,
@@ -34,7 +41,16 @@ function createWindow() {
       process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
   });
 
-  mainWindow.setMinimumSize(1200, 920);
+  mainWindow.setMinimumSize(1200, WINDOW_MIN_HEIGHT);
+
+  mainWindow.on("close", (event) => {
+    if (process.platform !== "darwin" || isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.hide();
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -59,6 +75,10 @@ function createWindow() {
   });
 
   ipcContext.setMainWindow(mainWindow);
+}
+
+function appIconPath(): string {
+  return path.join(app.getAppPath(), "assets", "icon.png");
 }
 
 function loadMainWindow() {
@@ -147,6 +167,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   stopMcpServer().catch((error) => {
     console.error("Failed to stop MCP server:", error);
   });
@@ -162,6 +183,7 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+    loadMainWindow();
   } else {
     // Tahoe/Electron can flash custom-positioned traffic lights on restore.
     mainWindow?.show();

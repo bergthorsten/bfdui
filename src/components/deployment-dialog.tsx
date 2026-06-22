@@ -24,6 +24,7 @@ import {
 } from "@/actions/bfd";
 import { openExternalLink } from "@/actions/shell";
 import {
+  DEPLOYMENT_POLLING_INTERVAL_MS,
   deploymentPollingInterval,
   deploymentPollingLabel,
   ENVIRONMENT_INPUT_NAMES,
@@ -878,13 +879,20 @@ export default function DeploymentDialog({
     queryFn: () => refreshDeploymentBatch(deploymentBatchId ?? ""),
     queryKey: ["bfd", "deployment", deploymentBatchId],
     refetchInterval: (query) => deploymentPollingInterval(query.state.data),
+    staleTime: DEPLOYMENT_POLLING_INTERVAL_MS,
   });
   const createDeploymentMutation = useMutation({
     mutationFn: createDeployment,
     onSuccess: (batch) => {
       setDeploymentBatchId(batch.id);
       queryClient.setQueryData(["bfd", "deployment", batch.id], batch);
-      queryClient.invalidateQueries({ queryKey: ["bfd", "deployments"] });
+      queryClient.setQueryData<DeploymentBatch[]>(
+        ["bfd", "deployments"],
+        (current) => [
+          batch,
+          ...(current ?? []).filter((candidate) => candidate.id !== batch.id),
+        ]
+      );
     },
   });
   const warning = targetWarning(selectedTarget);
@@ -959,7 +967,7 @@ export default function DeploymentDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-h-[calc(100vh-0.5rem)] w-[min(calc(100vw-1rem),880px)]">
+      <DialogContent className="max-h-[calc(100vh-0.5rem)] w-[min(calc(100vw-1rem),880px)] grid-rows-[auto_minmax(0,1fr)_auto]">
         <DialogHeader className="pr-12">
           <DialogTitle>Deploy {row.ticket.key}</DialogTitle>
           <DialogDescription>
@@ -970,7 +978,7 @@ export default function DeploymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid gap-6 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <section className="grid content-start gap-4">
             <Field label="Branch/ref">
               <div className="relative">

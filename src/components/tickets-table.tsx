@@ -61,6 +61,10 @@ const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
   "timed-out",
 ]);
 
+function isActiveDeployment(batch: DeploymentBatch | undefined): boolean {
+  return Boolean(batch && !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState));
+}
+
 function ticketSortValue(ticketKey: string): [string, number] {
   const [project = ticketKey, number = "0"] = ticketKey.split("-");
   return [project, Number(number) || 0];
@@ -399,9 +403,11 @@ export default function TicketsTable({
               developmentStatus?.kind !== "loading";
             const showBranchOnly =
               pullRequests.length === 0 && branches.length > 0;
-            const showNotDeployed =
-              deployments.length === 0 && devSystemStatus?.kind !== "loading";
             const latestDeployment = deploymentByTicket.get(ticket.key);
+            const showNotDeployed =
+              deployments.length === 0 &&
+              !isActiveDeployment(latestDeployment) &&
+              devSystemStatus?.kind !== "loading";
             return (
               <TableRow key={ticket.key}>
                 <TableCell className="whitespace-nowrap">

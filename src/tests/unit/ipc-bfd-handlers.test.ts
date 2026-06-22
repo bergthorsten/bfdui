@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { AppConfig, JiraDevelopmentInfo } from "@/types/bfd";
+import type {
+  AppConfig,
+  DeploymentBatch,
+  JiraDevelopmentInfo,
+} from "@/types/bfd";
 
 const mocks = vi.hoisted(() => {
   const config = {
@@ -75,6 +79,7 @@ vi.mock("@/services/cli", () => ({
 }));
 
 import {
+  getDeploymentBatches,
   getTicketDevelopment,
   saveConfig,
   testConnection,
@@ -199,4 +204,48 @@ describe("BFD IPC handlers", () => {
       jiraDevelopment
     );
   });
+
+  test("throttles active deployment batch refreshes", async () => {
+    const now = Date.parse("2026-06-22T10:00:00.000Z");
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
+    const recentActiveBatch = deploymentBatch({
+      id: "recent-active",
+      updatedAt: now - 30_000,
+    });
+    const staleActiveBatch = deploymentBatch({
+      id: "stale-active",
+      updatedAt: now - 90_000,
+    });
+
+    mocks.deployments.listDeploymentBatches.mockReturnValue([
+      recentActiveBatch,
+      staleActiveBatch,
+    ]);
+    mocks.deployments.refreshDeploymentBatch.mockResolvedValue(staleActiveBatch);
+
+    await callProcedure(getDeploymentBatches, undefined);
+
+    expect(mocks.deployments.refreshDeploymentBatch).toHaveBeenCalledTimes(1);
+    expect(mocks.deployments.refreshDeploymentBatch).toHaveBeenCalledWith(
+      "stale-active"
+    );
+
+    dateNow.mockRestore();
+  });
 });
+
+function deploymentBatch(
+  overrides: Partial<DeploymentBatch> = {}
+): DeploymentBatch {
+  return {
+    aggregateState: "queued",
+    branch: "PC-123-shop",
+    createdAt: Date.parse("2026-06-22T09:59:00.000Z"),
+    environment: "04",
+    id: "batch-1",
+    ticketKey: "PC-123",
+    updatedAt: Date.parse("2026-06-22T09:59:00.000Z"),
+    workflows: [],
+    ...overrides,
+  };
+}

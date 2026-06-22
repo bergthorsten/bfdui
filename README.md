@@ -33,6 +33,6 @@ Available tools:
 
 ## Notes
 
-- Secrets are stored through Electron `safeStorage` and are not returned to the renderer.
-- Deployment/reset controls are intentionally blocked until the production workflow is wired and validated.
+- Secrets are stored through Electron `safeStorage` when available and are not returned to the renderer. If OS encryption is unavailable, BFD falls back to local plaintext token files.
+- Deployment controls are enabled for final human-run validation; automated agents must not run deployments.
 - Publishing is not configured yet for this internal app.

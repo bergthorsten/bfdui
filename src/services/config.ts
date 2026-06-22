@@ -112,14 +112,17 @@ export class ConfigService {
       return;
     }
     if (!safeStorage.isEncryptionAvailable()) {
-      console.warn(secretStorageUnavailableMessage());
-      writeFileSync(this.unsafeSecretPath(key), value, "utf8");
+      this.setUnsafeSecret(key, value);
       return;
     }
 
-    const encrypted = safeStorage.encryptString(value);
-    writeFileSync(this.secretPath(key), encrypted);
-    this.deleteIfExists(this.unsafeSecretPath(key));
+    try {
+      const encrypted = safeStorage.encryptString(value);
+      writeFileSync(this.secretPath(key), encrypted);
+      this.deleteIfExists(this.unsafeSecretPath(key));
+    } catch {
+      this.setUnsafeSecret(key, value);
+    }
   }
 
   /** Main-process only. Never expose the return value to the renderer. */
@@ -156,6 +159,14 @@ export class ConfigService {
     };
   }
 
+  private hasSecret(key: SecretKey): boolean {
+    return Boolean(this.getSecret(key));
+  }
+
+  private setUnsafeSecret(key: SecretKey, value: string): void {
+    writeFileSync(this.unsafeSecretPath(key), value, "utf8");
+  }
+
   private getUnsafeSecret(key: SecretKey): string | null {
     const file = this.unsafeSecretPath(key);
     if (!existsSync(file)) {
@@ -164,25 +175,9 @@ export class ConfigService {
     return readFileSync(file, "utf8") || null;
   }
 
-  private hasSecret(key: SecretKey): boolean {
-    return Boolean(this.getSecret(key));
-  }
-
   private deleteIfExists(file: string): void {
     if (existsSync(file)) {
       unlinkSync(file);
     }
   }
-}
-
-function secretStorageUnavailableMessage(): string {
-  if (process.platform === "darwin") {
-    return "macOS Keychain is not available to this app right now. Token was not saved.";
-  }
-
-  if (process.platform === "linux") {
-    return "Linux secret storage is not available. Install and unlock a secret service such as GNOME Keyring or KWallet, then try again.";
-  }
-
-  return "Secret storage encryption is not available on this system. Token was not saved.";
 }

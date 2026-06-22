@@ -49,6 +49,7 @@ function serviceFor(options: {
   const github = {
     dispatchWorkflow: vi.fn().mockResolvedValue(undefined),
     getBranchHeadSha: vi.fn().mockResolvedValue("branch-sha"),
+    listWorkflowRunJobs: vi.fn().mockResolvedValue([]),
     listWorkflowRuns: vi.fn().mockResolvedValue([]),
     ...options.github,
   };
@@ -215,6 +216,58 @@ describe("DeploymentService", () => {
       "Deployment succeeded",
       "1 workflow finished for PC-123."
     );
+  });
+
+  test("finishes app-shop deployments when adminserver and k8s jobs succeed", async () => {
+    const runStarted = {
+      conclusion: null,
+      createdAt: "2026-06-18T10:00:02.000Z",
+      currentAttempt: 1,
+      event: "workflow_dispatch",
+      headBranch: "PC-123-shop",
+      id: 987,
+      status: "in_progress",
+      updatedAt: "2026-06-18T10:03:00.000Z",
+      url: "https://github.com/bergfreunde/shop/actions/runs/987",
+    };
+    const github = {
+      listWorkflowRunJobs: vi.fn().mockResolvedValue([
+        {
+          completedAt: "2026-06-18T10:01:00.000Z",
+          conclusion: "success",
+          id: 1,
+          name: "Deploy 04 to adminserver",
+          startedAt: "2026-06-18T10:00:30.000Z",
+          status: "completed",
+          url: "https://github.example/jobs/1",
+        },
+        {
+          completedAt: "2026-06-18T10:02:00.000Z",
+          conclusion: "success",
+          id: 2,
+          name: "Deploy 04 to k8s",
+          startedAt: "2026-06-18T10:01:30.000Z",
+          status: "completed",
+          url: "https://github.example/jobs/2",
+        },
+      ]),
+      listWorkflowRuns: vi.fn().mockResolvedValue([runStarted]),
+    };
+    const { service } = serviceFor({ github });
+
+    const batch = await service.createDeployment({
+      branch: "PC-123-shop",
+      environment: "04",
+      ticketKey: "PC-123",
+      workflows: [{ inputs: {}, name: "app-shop" }],
+    });
+
+    expect(batch.aggregateState).toBe("success");
+    expect(batch.workflows[0]).toMatchObject({
+      runId: 987,
+      state: "success",
+    });
+    expect(github.listWorkflowRunJobs).toHaveBeenCalledWith(987);
   });
 
   test("times out runs that never appear", async () => {

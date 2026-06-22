@@ -655,4 +655,44 @@ describe("GitHubService", () => {
       },
     ]);
   });
+
+  test("lists workflow run jobs", async () => {
+    const jobUrl =
+      "https://github.com/bergfreunde/shop/actions/runs/123/job/1";
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        jobs: [
+          {
+            completed_at: "2026-06-18T10:01:00Z",
+            conclusion: "success",
+            html_url: jobUrl,
+            id: 1,
+            name: "Deploy 04 to adminserver",
+            started_at: "2026-06-18T10:00:30Z",
+            status: "completed",
+          },
+        ],
+      })
+    );
+
+    const jobs = await new GitHubService(configService()).listWorkflowRunJobs(
+      123
+    );
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/actions/runs/123/jobs?"
+    );
+    expect(String(fetchMock.mock.calls[0][0])).toContain("filter=latest");
+    expect(jobs).toEqual([
+      {
+        completedAt: "2026-06-18T10:01:00Z",
+        conclusion: "success",
+        id: 1,
+        name: "Deploy 04 to adminserver",
+        startedAt: "2026-06-18T10:00:30Z",
+        status: "completed",
+        url: jobUrl,
+      },
+    ]);
+  });
 });

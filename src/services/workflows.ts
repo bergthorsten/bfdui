@@ -203,19 +203,15 @@ function readWorkflowFile(filePath: string, warnings: string[]): string | null {
 }
 
 function hasWorkflowDispatch(content: string): boolean {
-  return content.split(LINE_BREAK_PATTERN).some((rawLine) => {
-    const line = rawLine.split("#")[0];
-    return WORKFLOW_DISPATCH_PATTERN.test(line);
-  });
+  const lines = content.split(LINE_BREAK_PATTERN).map(parseYamlLine);
+  return workflowDispatchIndex(lines) >= 0;
 }
 
 function parseWorkflowDispatchInputs(
   content: string
 ): WorkflowInputDefinition[] {
   const lines = content.split(LINE_BREAK_PATTERN).map(parseYamlLine);
-  const dispatchIndex = lines.findIndex((line) =>
-    WORKFLOW_DISPATCH_PATTERN.test(line.text)
-  );
+  const dispatchIndex = workflowDispatchIndex(lines);
   if (dispatchIndex < 0) {
     return [];
   }
@@ -259,6 +255,45 @@ function parseWorkflowDispatchInputs(
   }
 
   return inputs;
+}
+
+function workflowDispatchIndex(
+  lines: Array<{ indent: number; text: string }>
+): number {
+  const onIndex = lines.findIndex(
+    (line) => parseYamlKeyName(line.text) === "on"
+  );
+  if (onIndex < 0) {
+    return -1;
+  }
+
+  const onProperty = parseYamlProperty(lines[onIndex].text);
+  if (onProperty?.value && WORKFLOW_DISPATCH_PATTERN.test(onProperty.value)) {
+    return onIndex;
+  }
+
+  const onIndent = lines[onIndex].indent;
+  const onEndIndex = nextYamlSiblingIndex(lines, onIndex + 1, onIndent);
+  const triggerIndent = lines
+    .slice(onIndex + 1, onEndIndex)
+    .find((line) => line.text)?.indent;
+  if (typeof triggerIndent !== "number") {
+    return -1;
+  }
+
+  return lines.findIndex((line, index) => {
+    if (
+      !(index > onIndex && index < onEndIndex && line.indent === triggerIndent)
+    ) {
+      return false;
+    }
+    const listValue = line.text.replace(YAML_LIST_ITEM_PATTERN, "$1");
+    return (
+      parseYamlKeyName(line.text) === "workflow_dispatch" ||
+      parseYamlKeyName(listValue) === "workflow_dispatch" ||
+      unquoteYamlScalar(listValue) === "workflow_dispatch"
+    );
+  });
 }
 
 function parseWorkflowAffectedPathGlobs(content: string): string[] {

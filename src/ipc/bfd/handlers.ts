@@ -38,6 +38,7 @@ const TERMINAL_DEPLOYMENT_STATES = new Set([
   "success",
   "timed-out",
 ]);
+const MIN_ACTIVE_DEPLOYMENT_REFRESH_MS = 60_000;
 
 export const getConfig = os.handler(() => ({
   config: config.get(),
@@ -137,9 +138,13 @@ export const createDeployment = os
 
 export const getDeploymentBatches = os.handler(async () => {
   const batches = deployments.listDeploymentBatches();
+  const now = Date.now();
   await Promise.all(
     batches
       .filter(isActiveDeploymentBatch)
+      .filter(
+        (batch) => batch.updatedAt <= now - MIN_ACTIVE_DEPLOYMENT_REFRESH_MS
+      )
       .map((batch) =>
         deployments.refreshDeploymentBatch(batch.id).catch(() => batch)
       )

@@ -3,6 +3,7 @@ import { ExternalLink, History, Loader2, Rocket, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { deleteDeploymentBatch, getDeploymentBatches } from "@/actions/bfd";
 import { openExternalLink } from "@/actions/shell";
+import { DEPLOYMENT_POLLING_INTERVAL_MS } from "@/components/deployment-dialog-helpers";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { APP_EVENTS } from "@/constants";
 import { devSystemUrl } from "@/domain/urls";
-import { deploymentBatchesPollingInterval } from "@/routes/dashboard-helpers";
+import { deploymentBatchesPollingInterval } from "@/lib/dashboard-helpers";
 import type { DeploymentBatch, DeploymentRunState } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
@@ -85,6 +86,7 @@ export default function DeploymentHistoryLauncher() {
     refetchInterval: (query) =>
       deploymentBatchesPollingInterval(query.state.data),
     retry: false,
+    staleTime: DEPLOYMENT_POLLING_INTERVAL_MS,
   });
   const deleteDeploymentMutation = useMutation({
     mutationFn: deleteDeploymentBatch,

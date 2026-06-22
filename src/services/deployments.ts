@@ -4,6 +4,7 @@ import path from "node:path";
 import { app, Notification } from "electron";
 import type {
   GitHubService,
+  GitHubWorkflowJobSummary,
   GitHubWorkflowRunSummary,
 } from "@/services/github";
 import type { WorkflowService } from "@/services/workflows";
@@ -20,7 +21,10 @@ import type {
 
 type DeploymentGitHub = Pick<
   GitHubService,
-  "dispatchWorkflow" | "getBranchHeadSha" | "listWorkflowRuns"
+  | "dispatchWorkflow"
+  | "getBranchHeadSha"
+  | "listWorkflowRunJobs"
+  | "listWorkflowRuns"
 >;
 type DeploymentWorkflows = Pick<
   WorkflowService,
@@ -59,6 +63,7 @@ const DISPATCH_MATCH_WINDOW_MS = 30_000;
 const MAX_HISTORY_BATCHES = 100;
 const HISTORY_RETENTION_MS = 24 * 60 * 60_000;
 const WORKFLOW_FILE_EXTENSION_PATTERN = /\.ya?ml$/i;
+const SHOP_WORKFLOW_NAME = "app-shop";
 const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
   "cancelled",
   "failure",
@@ -302,6 +307,12 @@ export class DeploymentService {
         };
       }
 
+      const state = await this.deploymentStateForMatchedRun(
+        batch,
+        workflow,
+        matched
+      );
+
       return {
         ...workflow,
         conclusion: matched.conclusion,
@@ -311,7 +322,7 @@ export class DeploymentService {
         runStatus: matched.status,
         runUpdatedAt: matched.updatedAt,
         runUrl: matched.url,
-        state: deploymentStateFromGitHubRun(matched),
+        state,
       };
     } catch (error) {
       return {
@@ -320,6 +331,27 @@ export class DeploymentService {
         state:
           workflow.state === "pending-dispatch" ? "unknown" : workflow.state,
       };
+    }
+  }
+
+  private async deploymentStateForMatchedRun(
+    batch: DeploymentBatch,
+    workflow: DeploymentWorkflowRun,
+    run: GitHubWorkflowRunSummary
+  ): Promise<DeploymentRunState> {
+    const state = deploymentStateFromGitHubRun(run);
+    if (!(state === "in-progress" || state === "queued")) {
+      return state;
+    }
+    if (!usesShopCriticalCssWorkaround(workflow)) {
+      return state;
+    }
+
+    try {
+      const jobs = await this.github.listWorkflowRunJobs(run.id);
+      return shopDeploymentStateFromJobs(batch.environment, jobs) ?? state;
+    } catch {
+      return state;
     }
   }
 
@@ -532,6 +564,47 @@ function deploymentStateFromGitHubRun(
     default:
       return "unknown";
   }
+}
+
+function usesShopCriticalCssWorkaround(
+  workflow: DeploymentWorkflowRun
+): boolean {
+  return (
+    workflow.targetName === SHOP_WORKFLOW_NAME ||
+    normalizeWorkflowValue(workflow.fileName) === SHOP_WORKFLOW_NAME
+  );
+}
+
+function shopDeploymentStateFromJobs(
+  environment: string,
+  jobs: GitHubWorkflowJobSummary[]
+): DeploymentRunState | null {
+  const requiredJobs = [
+    `Deploy ${environment} to adminserver`,
+    `Deploy ${environment} to k8s`,
+  ];
+  const matchedJobs = requiredJobs.map((name) =>
+    jobs.find((job) => job.name === name)
+  );
+
+  if (matchedJobs.some((job) => !job)) {
+    return null;
+  }
+  if (matchedJobs.some((job) => job?.conclusion === "failure")) {
+    return "failure";
+  }
+  if (
+    matchedJobs.some((job) =>
+      ["cancelled", "skipped"].includes(job?.conclusion ?? "")
+    )
+  ) {
+    return "cancelled";
+  }
+  if (matchedJobs.every((job) => job?.conclusion === "success")) {
+    return "success";
+  }
+
+  return null;
 }
 
 export function aggregateDeploymentState(

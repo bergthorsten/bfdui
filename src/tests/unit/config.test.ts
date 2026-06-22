@@ -84,7 +84,7 @@ describe("ConfigService", () => {
     expect(service.secretStatus()).toMatchObject({ jiraToken: false });
   });
 
-  test("uses temporary unsafe secret storage when encryption is unavailable", () => {
+  test("uses unsafe fallback secret storage when encryption is unavailable", () => {
     const service = new ConfigService();
     electronState.encryptionAvailable = false;
 

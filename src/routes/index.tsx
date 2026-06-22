@@ -57,7 +57,7 @@ import {
   type SprintFilterState,
   searchRows,
   sprintRemainingLabel,
-} from "@/routes/dashboard-helpers";
+} from "@/lib/dashboard-helpers";
 import type { JiraSprint } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 

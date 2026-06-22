@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_GITHUB_REPO } from "@/domain/urls";
-import { dashboardUpdatedLabel } from "@/routes/dashboard-helpers";
+import { dashboardUpdatedLabel } from "@/lib/dashboard-helpers";
 import type { JiraTicket } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
