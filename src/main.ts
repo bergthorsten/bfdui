@@ -5,6 +5,7 @@ import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
 } from "electron-devtools-installer";
+import { UpdateSourceType, updateElectronApp } from "update-electron-app";
 import { ipcContext } from "@/ipc/context";
 import { startMcpServer, stopMcpServer } from "@/services/mcp";
 import { IPC_CHANNELS, inDevelopment } from "./constants";
@@ -106,7 +107,13 @@ async function installExtensions() {
 }
 
 function checkForUpdates() {
-  // Auto-update disabled: no publish target configured for this internal app yet.
+  updateElectronApp({
+    updateInterval: "1 hour",
+    updateSource: {
+      repo: "bergthorsten/bfdui",
+      type: UpdateSourceType.ElectronPublicUpdateService,
+    },
+  });
 }
 
 async function setupORPC() {

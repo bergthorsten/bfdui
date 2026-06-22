@@ -14,19 +14,15 @@ on:
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/desktop-builds.yml"
-      - "assets/**"
-      - "forge.config.ts"
-      - "package-lock.json"
-      - "package.json"
-      - "src/**"
-      - "vite.*.config.mts"
+    tags:
+      - "v*"
 
 jobs:
   make-linux:
     name: Make Linux installers
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -48,9 +44,17 @@ jobs:
         run: npm test
 
       - name: Build Linux installers
+        if: github.ref_type != 'tag'
         run: npm run make -- --platform=linux --arch=x64
 
+      - name: Publish Linux installers
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run publish -- --platform=linux --arch=x64
+
       - name: Upload Linux artifacts
+        if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: bfd-linux-x64
@@ -88,5 +92,6 @@ jobs:
         with:
           name: bfd-macos-arm64
           path: |
+            out/make/**/*.dmg
             out/make/**/*.zip
           if-no-files-found: error
