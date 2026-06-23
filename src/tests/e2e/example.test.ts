@@ -24,6 +24,7 @@ const CONTINUE_TO_ACCOUNTS = /continue to accounts/i;
 const E2E_CONFIG: AppConfig = {
   argo: {
     app: "shop",
+    argocdNamespace: "argocd",
     devContext: "dev",
   },
   github: {

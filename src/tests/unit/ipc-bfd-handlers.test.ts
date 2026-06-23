@@ -87,7 +87,7 @@ import {
 import { JiraCloudService } from "@/services/jira";
 
 const appConfig: AppConfig = {
-  argo: { app: "shop", devContext: "dev" },
+  argo: { app: "shop", argocdNamespace: "argocd", devContext: "dev" },
   github: { owner: "bergfreunde", repo: "shop", useGhCli: true },
   jira: {
     baseUrl: "https://jira.example.com",
@@ -221,7 +221,9 @@ describe("BFD IPC handlers", () => {
       recentActiveBatch,
       staleActiveBatch,
     ]);
-    mocks.deployments.refreshDeploymentBatch.mockResolvedValue(staleActiveBatch);
+    mocks.deployments.refreshDeploymentBatch.mockResolvedValue(
+      staleActiveBatch
+    );
 
     await callProcedure(getDeploymentBatches, undefined);
 

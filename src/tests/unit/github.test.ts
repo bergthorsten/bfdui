@@ -4,7 +4,7 @@ import { GitHubService, reviewsApproved } from "@/services/github";
 import type { JiraDevelopmentInfo, PullRequestSummary } from "@/types/bfd";
 
 const APP_CONFIG = {
-  argo: { app: "shop", devContext: "dev" },
+  argo: { app: "shop", argocdNamespace: "argocd", devContext: "dev" },
   github: { owner: "bergfreunde", repo: "shop", useGhCli: false },
   jira: {
     baseUrl: "https://jira.example.com/",

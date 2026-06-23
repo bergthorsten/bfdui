@@ -109,13 +109,13 @@ function readyToolAutomaticTests(
   }
 
   if (
-    isReady("argocd") &&
     isReady("kubectl") &&
     config.argo.app.trim() &&
+    config.argo.argocdNamespace.trim() &&
     config.argo.devContext.trim()
   ) {
     tests.push({
-      key: `argo:${checkedAt}:${config.argo.app}:${config.argo.devContext}`,
+      key: `argo:${checkedAt}:${config.argo.app}:${config.argo.argocdNamespace}:${config.argo.devContext}`,
       kind: "argo",
     });
   }
@@ -558,9 +558,9 @@ function SystemWorkspaceScreen({
           <div className="grid gap-1">
             <h2 className="font-semibold text-sm">Automatic local checks</h2>
             <p className="max-w-3xl text-muted-foreground text-xs leading-relaxed">
-              Install or authenticate a missing tool, then refresh once. When
-              gh, argocd, or kubectl turns green, BFD immediately tests the
-              matching live connection and shows the result here.
+              Install or authenticate a missing tool, then refresh once. When gh
+              or kubectl turns green, BFD immediately tests the matching live
+              connection and shows the result here.
             </p>
           </div>
         </div>
@@ -663,7 +663,7 @@ function ToolsStep({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-muted-foreground text-sm leading-relaxed">
           BFD runs these commands from the desktop app. Refresh after installing
-          or authenticating a tool; green gh/argocd/kubectl checks trigger their
+          or authenticating a tool; green gh/kubectl checks trigger their
           connection tests automatically.
         </p>
         <Button disabled={loading} onClick={onRefresh} variant="outline">
@@ -910,13 +910,23 @@ function WorkspaceStep({
         title="ArgoCD / Kubernetes"
       >
         <div className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Field label="App label">
               <Input
                 onChange={(event) =>
                   updateInput(event, (value) => onUpdateArgo({ app: value }))
                 }
                 value={config.argo.app}
+              />
+            </Field>
+            <Field label="ArgoCD namespace">
+              <Input
+                onChange={(event) =>
+                  updateInput(event, (value) =>
+                    onUpdateArgo({ argocdNamespace: value })
+                  )
+                }
+                value={config.argo.argocdNamespace}
               />
             </Field>
             <Field label="Kube context">
@@ -931,8 +941,12 @@ function WorkspaceStep({
             </Field>
           </div>
           <CommandLine
-            command={`argocd app list --core --kube-context ${config.argo.devContext || "dev"}`}
+            command={argoApplicationsCommand(config)}
             label="What BFD runs"
+          />
+          <CommandLine
+            command={argoRbacCheckCommand(config)}
+            label="RBAC check"
           />
         </div>
       </SetupPanel>
@@ -1331,6 +1345,20 @@ function updateInput(
   update: (value: string) => void
 ) {
   update(event.target.value);
+}
+
+function argoApplicationsCommand(config: AppConfig): string {
+  const context = config.argo.devContext.trim();
+  const namespace = config.argo.argocdNamespace.trim() || "argocd";
+  const contextArgs = context ? `--context ${context} ` : "";
+  return `kubectl ${contextArgs}-n ${namespace} get applications.argoproj.io -l app=${config.argo.app || "shop"} -o json`;
+}
+
+function argoRbacCheckCommand(config: AppConfig): string {
+  const context = config.argo.devContext.trim();
+  const namespace = config.argo.argocdNamespace.trim() || "argocd";
+  const contextArgs = context ? `--context ${context} ` : "";
+  return `kubectl ${contextArgs}auth can-i list applications.argoproj.io -n ${namespace}`;
 }
 
 function messageOf(error: unknown): string {

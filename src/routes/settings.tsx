@@ -331,7 +331,7 @@ function Settings() {
           </Section>
 
           <Section
-            description="Dev system state via the argocd CLI (core mode)"
+            description="Dev system state via ArgoCD Application CRDs in Kubernetes"
             icon={<SiArgo className="size-4" color={SiArgoHex} />}
             testButton={
               <TestButton
@@ -342,11 +342,19 @@ function Settings() {
             }
             title="ArgoCD / Kubernetes"
           >
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <Field label="App label">
                 <Input
                   onChange={(event) => updateArgo({ app: event.target.value })}
                   value={config.argo.app}
+                />
+              </Field>
+              <Field label="ArgoCD namespace">
+                <Input
+                  onChange={(event) =>
+                    updateArgo({ argocdNamespace: event.target.value })
+                  }
+                  value={config.argo.argocdNamespace}
                 />
               </Field>
               <Field label="Kube context">

@@ -53,6 +53,7 @@ vi.mock("@/actions/shell", () => ({
 const baseConfig: AppConfig = {
   argo: {
     app: "shop",
+    argocdNamespace: "argocd",
     devContext: "dev",
   },
   github: {

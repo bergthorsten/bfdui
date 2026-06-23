@@ -46,11 +46,7 @@ export const getConfig = os.handler(() => ({
 }));
 
 export const checkEnvironment = os.handler(async () => {
-  const tools = await Promise.all([
-    checkGhCli(),
-    checkArgocdCli(),
-    checkKubectlCli(),
-  ]);
+  const tools = await Promise.all([checkGhCli(), checkKubectlCli()]);
 
   return {
     checkedAt: Date.now(),
@@ -245,41 +241,6 @@ async function checkGhCli(): Promise<EnvironmentToolCheck> {
   };
 }
 
-async function checkArgocdCli(): Promise<EnvironmentToolCheck> {
-  const version = await runCli("argocd", ["version", "--client"], 5000);
-  const base = {
-    authCommand: "argocd app list --core --kube-context dev",
-    command: "argocd version --client",
-    installCommand: installCommandFor("argocd"),
-    label: "ArgoCD CLI",
-    name: "argocd" as const,
-  };
-
-  if (version.missing) {
-    return {
-      ...base,
-      message: "argocd is not installed.",
-      status: "missing",
-    };
-  }
-
-  if (!version.ok) {
-    return {
-      ...base,
-      detail: firstLine(version.output),
-      message: "Installed, but the client check returned a warning.",
-      status: "warning",
-    };
-  }
-
-  return {
-    ...base,
-    detail: firstLine(version.output),
-    message: "Installed. BFD uses ArgoCD core mode.",
-    status: "ok",
-  };
-}
-
 async function checkKubectlCli(): Promise<EnvironmentToolCheck> {
   const version = await runCli("kubectl", ["version", "--client"], 5000);
   const base = {
@@ -355,7 +316,7 @@ function firstLine(value: string): string | undefined {
     .find(Boolean);
 }
 
-function installCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+function installCommandFor(command: "gh" | "kubectl"): string {
   if (process.platform === "darwin") {
     return macInstallCommandFor(command);
   }
@@ -368,17 +329,15 @@ function installCommandFor(command: "argocd" | "gh" | "kubectl"): string {
   return `Install ${command} for your operating system, then refresh checks.`;
 }
 
-function macInstallCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+function macInstallCommandFor(command: "gh" | "kubectl"): string {
   if (command === "kubectl") {
     return "brew install kubernetes-cli";
   }
   return `brew install ${command}`;
 }
 
-function linuxInstallCommandFor(command: "argocd" | "gh" | "kubectl"): string {
+function linuxInstallCommandFor(command: "gh" | "kubectl"): string {
   switch (command) {
-    case "argocd":
-      return "curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 && sudo install -m 555 /tmp/argocd /usr/local/bin/argocd";
     case "gh":
       return "sudo apt update && sudo apt install gh";
     case "kubectl":
@@ -388,12 +347,8 @@ function linuxInstallCommandFor(command: "argocd" | "gh" | "kubectl"): string {
   }
 }
 
-function windowsInstallCommandFor(
-  command: "argocd" | "gh" | "kubectl"
-): string {
+function windowsInstallCommandFor(command: "gh" | "kubectl"): string {
   switch (command) {
-    case "argocd":
-      return "winget install ArgoProject.ArgoCD";
     case "gh":
       return "winget install GitHub.cli";
     case "kubectl":

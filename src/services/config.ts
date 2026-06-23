@@ -29,6 +29,7 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   argo: {
     app: "shop",
+    argocdNamespace: "argocd",
     devContext: "dev",
   },
   repoPath: path.join(homedir(), "devenv", "src"),

@@ -3,7 +3,7 @@ import type { ConfigService } from "@/services/config";
 import { categorizeStatus, JiraCloudService } from "@/services/jira";
 
 const APP_CONFIG = {
-  argo: { app: "shop", devContext: "dev" },
+  argo: { app: "shop", argocdNamespace: "argocd", devContext: "dev" },
   github: { owner: "bergfreunde", repo: "shop", useGhCli: true },
   jira: {
     baseUrl: "https://jira.example.com/",

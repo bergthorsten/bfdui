@@ -14,6 +14,7 @@ vi.mock("electron", () => ({
 const BASE_CONFIG: AppConfig = {
   argo: {
     app: "shop",
+    argocdNamespace: "argocd",
     devContext: "dev",
   },
   github: {

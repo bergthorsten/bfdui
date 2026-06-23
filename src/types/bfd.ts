@@ -240,7 +240,7 @@ export interface ConnectionResult {
   ok: boolean;
 }
 
-export type EnvironmentToolName = "argocd" | "gh" | "kubectl";
+export type EnvironmentToolName = "gh" | "kubectl";
 
 export type EnvironmentToolStatus = "missing" | "ok" | "warning";
 
@@ -265,6 +265,8 @@ export interface AppConfig {
   argo: {
     /** ArgoCD app label to query, e.g. "shop". */
     app: string;
+    /** Namespace where ArgoCD Application CRDs live, usually "argocd". */
+    argocdNamespace: string;
     /** kube context short name, e.g. "dev". */
     devContext: string;
   };

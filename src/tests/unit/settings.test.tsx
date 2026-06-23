@@ -37,7 +37,7 @@ const Settings = (Route as unknown as { options: { component: ComponentType } })
 const SAVE_SETTINGS_PATTERN = /save settings/i;
 
 const config: AppConfig = {
-  argo: { app: "shop", devContext: "dev" },
+  argo: { app: "shop", argocdNamespace: "argocd", devContext: "dev" },
   github: { owner: "bergfreunde", repo: "shop", useGhCli: false },
   jira: {
     baseUrl: "https://jira.example.com",

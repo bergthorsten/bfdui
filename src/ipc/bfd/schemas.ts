@@ -3,6 +3,7 @@ import { z } from "zod";
 export const appConfigSchema = z.object({
   argo: z.object({
     app: z.string(),
+    argocdNamespace: z.string(),
     devContext: z.string(),
   }),
   github: z.object({

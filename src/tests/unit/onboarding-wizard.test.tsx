@@ -34,6 +34,7 @@ const SECRETS_STAY_LOCAL = /secrets stay local/i;
 const baseConfig: AppConfig = {
   argo: {
     app: "shop",
+    argocdNamespace: "argocd",
     devContext: "dev",
   },
   github: {
@@ -56,11 +57,7 @@ const emptySecrets: SecretStatus = {
   jiraToken: false,
 };
 
-type EnvironmentToolChecks = [
-  EnvironmentToolCheck,
-  EnvironmentToolCheck,
-  EnvironmentToolCheck,
-];
+type EnvironmentToolChecks = [EnvironmentToolCheck, EnvironmentToolCheck];
 
 function tool(
   name: EnvironmentToolCheck["name"],
@@ -81,11 +78,7 @@ function renderOnboarding({
   config = baseConfig,
   secrets = emptySecrets,
   strictMode = false,
-  tools = [
-    tool("gh", "missing"),
-    tool("argocd", "missing"),
-    tool("kubectl", "missing"),
-  ],
+  tools = [tool("gh", "missing"), tool("kubectl", "missing")],
 }: {
   config?: AppConfig;
   secrets?: SecretStatus;
@@ -153,7 +146,7 @@ test("shows the onboarding as two full-width screens without a stepper", async (
 
 test("automatically tests tool-backed connections when CLIs are ready", async () => {
   renderOnboarding({
-    tools: [tool("gh", "ok"), tool("argocd", "ok"), tool("kubectl", "ok")],
+    tools: [tool("gh", "ok"), tool("kubectl", "ok")],
   });
 
   await screen.findByRole("heading", { name: "System check & workspace" });
@@ -175,7 +168,7 @@ test("automatically tests tool-backed connections when CLIs are ready", async ()
 test("automatic tool checks are not lost under React StrictMode", async () => {
   renderOnboarding({
     strictMode: true,
-    tools: [tool("gh", "ok"), tool("argocd", "ok"), tool("kubectl", "ok")],
+    tools: [tool("gh", "ok"), tool("kubectl", "ok")],
   });
 
   await screen.findByRole("heading", { name: "System check & workspace" });
@@ -194,11 +187,7 @@ test("automatic tool checks are not lost under React StrictMode", async () => {
 
 test("does not auto-test when required tools still need attention", async () => {
   renderOnboarding({
-    tools: [
-      tool("gh", "warning"),
-      tool("argocd", "ok"),
-      tool("kubectl", "missing"),
-    ],
+    tools: [tool("gh", "warning"), tool("kubectl", "missing")],
   });
 
   expect(await screen.findByText("gh is warning")).toBeInTheDocument();

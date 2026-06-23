@@ -12,7 +12,7 @@ vi.mock("@/services/cli", () => ({
 }));
 
 const APP_CONFIG = {
-  argo: { app: "shop", devContext: "dev-cluster" },
+  argo: { app: "shop", argocdNamespace: "argocd", devContext: "dev-cluster" },
   github: { owner: "bergfreunde", repo: "shop", useGhCli: true },
   jira: {
     baseUrl: "https://jira.example.com/",
@@ -23,8 +23,6 @@ const APP_CONFIG = {
   onboardingComplete: true,
   repoPath: "/tmp/shop",
 };
-
-const JSON_PARSE_ERROR_PATTERN = /Unexpected token|not valid JSON/;
 
 function configService(config = APP_CONFIG): Pick<ConfigService, "get"> {
   return {
@@ -39,67 +37,79 @@ describe("ArgoService", () => {
     execCliMock.mockReset();
   });
 
-  test("constructs argocd app list arguments with kube context", async () => {
-    execCliMock.mockResolvedValueOnce({ stdout: "[]", stderr: "" });
+  test("constructs kubectl Application list arguments with kube context", async () => {
+    execCliMock.mockResolvedValueOnce({ stdout: '{"items":[]}', stderr: "" });
 
     await new ArgoService(configService()).getDevDeployments();
 
     expect(execCliMock).toHaveBeenCalledWith(
-      "argocd",
+      "kubectl",
       [
-        "app",
-        "list",
+        "--context",
+        "dev-cluster",
+        "-n",
+        "argocd",
+        "get",
+        "applications.argoproj.io",
         "-l",
         "app=shop",
         "-o",
         "json",
-        "--core",
-        "--kube-context",
-        "dev-cluster",
       ],
       { timeout: 20_000 }
     );
   });
 
   test("omits kube context when it is not configured", async () => {
-    execCliMock.mockResolvedValueOnce({ stdout: "[]", stderr: "" });
+    execCliMock.mockResolvedValueOnce({ stdout: '{"items":[]}', stderr: "" });
 
     await new ArgoService(
-      configService({ ...APP_CONFIG, argo: { app: "shop", devContext: "" } })
+      configService({
+        ...APP_CONFIG,
+        argo: { app: "shop", argocdNamespace: "argocd", devContext: "" },
+      })
     ).getDevDeployments();
 
     expect(execCliMock.mock.calls[0][1]).toEqual([
-      "app",
-      "list",
+      "-n",
+      "argocd",
+      "get",
+      "applications.argoproj.io",
       "-l",
       "app=shop",
       "-o",
       "json",
-      "--core",
     ]);
   });
 
-  test("rejects invalid and non-array argocd JSON responses", async () => {
+  test("rejects invalid and non-list kubectl JSON responses", async () => {
     const service = new ArgoService(configService());
 
     execCliMock.mockResolvedValueOnce({ stdout: "not-json", stderr: "" });
     await expect(service.getDevDeployments()).rejects.toThrow(
-      JSON_PARSE_ERROR_PATTERN
+      "Kubernetes returned invalid JSON for ArgoCD Applications."
     );
 
-    execCliMock.mockResolvedValueOnce({ stdout: '{"items":[]}', stderr: "" });
+    execCliMock.mockResolvedValueOnce({ stdout: "[]", stderr: "" });
     await expect(service.getDevDeployments()).rejects.toThrow(
-      "ArgoCD returned an unexpected response shape."
+      "Kubernetes returned an unexpected ArgoCD Application list shape."
     );
   });
 
-  test("surfaces command stderr during connection tests", async () => {
-    execCliMock.mockRejectedValueOnce({ stderr: "context deadline exceeded" });
+  test("returns clean RBAC errors with developer diagnostics", async () => {
+    execCliMock.mockRejectedValueOnce({
+      stderr:
+        'Error from server (Forbidden): applications.argoproj.io is forbidden: User "ada@example.com" cannot list resource "applications" in API group "argoproj.io" in the namespace "argocd"',
+    });
 
     await expect(
       new ArgoService(configService()).testConnection()
-    ).resolves.toEqual({
-      message: "context deadline exceeded",
+    ).resolves.toMatchObject({
+      detail: expect.stringContaining(
+        "RBAC check: kubectl --context dev-cluster auth can-i list applications.argoproj.io -n argocd"
+      ),
+      message:
+        'Kubernetes access is missing: this user cannot list ArgoCD Applications in namespace "argocd".',
       ok: false,
     });
   });

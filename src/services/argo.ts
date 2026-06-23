@@ -8,6 +8,33 @@ import type {
 } from "@/types/bfd";
 
 const TICKET_KEY_PREFIX_PATTERN = /^([A-Z]+-[0-9]+)-/;
+const ARGO_APPLICATION_RESOURCE = "applications.argoproj.io";
+const DEFAULT_ARGOCD_NAMESPACE = "argocd";
+
+interface ArgoQuerySettings {
+  app: string;
+  context: string;
+  namespace: string;
+}
+
+interface KubernetesList<T> {
+  items?: T[];
+}
+
+interface ArgoFailure {
+  detail?: string;
+  message: string;
+}
+
+class ArgoServiceError extends Error {
+  readonly detail?: string;
+
+  constructor({ detail, message }: ArgoFailure) {
+    super(message);
+    this.name = "ArgoServiceError";
+    this.detail = detail;
+  }
+}
 
 interface ArgoApplication {
   metadata?: {
@@ -49,14 +76,14 @@ export class ArgoService {
   async testConnection(): Promise<ConnectionResult> {
     try {
       const apps = await this.fetchApplications();
-      const { app } = this.config.get().argo;
+      const settings = this.querySettings();
       return {
         ok: true,
         message: "Connected to ArgoCD.",
-        detail: `${apps.length} app${apps.length === 1 ? "" : "s"} for app=${app}`,
+        detail: `${apps.length} Application${apps.length === 1 ? "" : "s"} in namespace ${settings.namespace} for app=${settings.app}`,
       };
     } catch (error) {
-      return { ok: false, message: messageOf(error) };
+      return failureResult(error);
     }
   }
 
@@ -66,27 +93,41 @@ export class ArgoService {
   }
 
   private async fetchApplications(): Promise<unknown[]> {
+    const settings = this.querySettings();
+    const args = kubectlApplicationArgs(settings);
+
+    try {
+      const { stdout } = await execCli("kubectl", args, { timeout: 20_000 });
+      const parsed = JSON.parse(stdout) as KubernetesList<unknown>;
+      if (!Array.isArray(parsed.items)) {
+        throw new ArgoServiceError({
+          detail: developerHint(settings, args),
+          message:
+            "Kubernetes returned an unexpected ArgoCD Application list shape.",
+        });
+      }
+      return parsed.items;
+    } catch (error) {
+      if (error instanceof ArgoServiceError) {
+        throw error;
+      }
+      if (error instanceof SyntaxError) {
+        throw new ArgoServiceError({
+          detail: developerHint(settings, args),
+          message: "Kubernetes returned invalid JSON for ArgoCD Applications.",
+        });
+      }
+      throw new ArgoServiceError(argoFailure(error, settings, args));
+    }
+  }
+
+  private querySettings(): ArgoQuerySettings {
     const { argo } = this.config.get();
-    const args = [
-      "app",
-      "list",
-      "-l",
-      `app=${argo.app}`,
-      "-o",
-      "json",
-      "--core",
-    ];
-
-    if (argo.devContext) {
-      args.push("--kube-context", argo.devContext);
-    }
-
-    const { stdout } = await execCli("argocd", args, { timeout: 20_000 });
-    const parsed = JSON.parse(stdout) as unknown;
-    if (!Array.isArray(parsed)) {
-      throw new Error("ArgoCD returned an unexpected response shape.");
-    }
-    return parsed;
+    return {
+      app: argo.app.trim(),
+      context: argo.devContext.trim(),
+      namespace: argo.argocdNamespace?.trim() || DEFAULT_ARGOCD_NAMESPACE,
+    };
   }
 }
 
@@ -169,12 +210,115 @@ export function ticketKeyFromBranch(branch: string | null): string | null {
   return match ? match[1] : null;
 }
 
-function messageOf(error: unknown): string {
-  const output = outputOf(error);
-  if (output) {
-    return output;
+function kubectlApplicationArgs(settings: ArgoQuerySettings): string[] {
+  const args: string[] = [];
+  if (settings.context) {
+    args.push("--context", settings.context);
   }
-  return error instanceof Error ? error.message : String(error);
+  return [
+    ...args,
+    "-n",
+    settings.namespace,
+    "get",
+    ARGO_APPLICATION_RESOURCE,
+    "-l",
+    `app=${settings.app}`,
+    "-o",
+    "json",
+  ];
+}
+
+function failureResult(error: unknown): ConnectionResult {
+  if (error instanceof ArgoServiceError) {
+    return { detail: error.detail, message: error.message, ok: false };
+  }
+  return { ok: false, message: messageOf(error) };
+}
+
+function argoFailure(
+  error: unknown,
+  settings: ArgoQuerySettings,
+  args: string[]
+): ArgoFailure {
+  const output = outputOf(error) ?? "";
+  const detail = developerHint(settings, args, output);
+  const code = (error as { code?: unknown }).code;
+  const text = output.toLowerCase();
+
+  if (code === "ENOENT") {
+    return {
+      detail,
+      message: "kubectl is not installed or is not available to BFD.",
+    };
+  }
+
+  if (text.includes("context") && text.includes("does not exist")) {
+    return {
+      detail,
+      message: `Kubernetes context "${settings.context}" was not found.`,
+    };
+  }
+
+  if (text.includes("namespaces") && text.includes("not found")) {
+    return {
+      detail,
+      message: `ArgoCD namespace "${settings.namespace}" was not found in Kubernetes.`,
+    };
+  }
+
+  if (
+    text.includes("no matches for kind") ||
+    text.includes("the server doesn't have a resource type") ||
+    text.includes("the server could not find the requested resource")
+  ) {
+    return {
+      detail,
+      message:
+        "The ArgoCD Application CRD is not available in this Kubernetes context.",
+    };
+  }
+
+  if (text.includes("forbidden") || text.includes("cannot list resource")) {
+    return {
+      detail,
+      message: `Kubernetes access is missing: this user cannot list ArgoCD Applications in namespace "${settings.namespace}".`,
+    };
+  }
+
+  if (
+    text.includes("you must be logged in") ||
+    text.includes(
+      "the server has asked for the client to provide credentials"
+    ) ||
+    text.includes("unable to connect") ||
+    text.includes("i/o timeout")
+  ) {
+    return {
+      detail,
+      message: `Kubernetes authentication or connectivity is not ready for context "${settings.context || "current"}".`,
+    };
+  }
+
+  return {
+    detail,
+    message: output || messageOf(error),
+  };
+}
+
+function developerHint(
+  settings: ArgoQuerySettings,
+  args: string[],
+  output?: string
+): string {
+  const authArgs = settings.context ? `--context ${settings.context} ` : "";
+  const hints = [
+    `Command: kubectl ${args.join(" ")}`,
+    `RBAC check: kubectl ${authArgs}auth can-i list ${ARGO_APPLICATION_RESOURCE} -n ${settings.namespace}`,
+  ];
+  if (output) {
+    hints.push(`Output: ${firstMeaningfulLine(output)}`);
+  }
+  return hints.join(" | ");
 }
 
 function outputOf(error: unknown): string | null {
@@ -187,5 +331,22 @@ function outputOf(error: unknown): string | null {
       )
       .map((value) => value.trim())
       .join("\n") || null
+  );
+}
+
+function messageOf(error: unknown): string {
+  const output = outputOf(error);
+  if (output) {
+    return output;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function firstMeaningfulLine(value: string): string {
+  return (
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) ?? value.trim()
   );
 }
