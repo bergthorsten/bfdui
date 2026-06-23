@@ -47,6 +47,10 @@ jobs:
         if: github.ref_type != 'tag'
         run: npm run make -- --platform=linux --arch=x64
 
+      - name: List Linux artifacts
+        if: github.ref_type != 'tag'
+        run: find out/make -type f -print
+
       - name: Publish Linux installers
         if: github.ref_type == 'tag'
         env:
@@ -59,6 +63,9 @@ jobs:
         with:
           name: bfd-linux-x64
           path: |
+            out/make/*.deb
+            out/make/*.rpm
+            out/make/*.zip
             out/make/**/*.deb
             out/make/**/*.rpm
             out/make/**/*.zip
@@ -87,11 +94,16 @@ jobs:
       - name: Build macOS ARM64 app
         run: npm run make -- --platform=darwin --arch=arm64
 
+      - name: List macOS ARM64 artifacts
+        run: find out/make -type f -print
+
       - name: Upload macOS ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: bfd-macos-arm64
           path: |
+            out/make/*.dmg
+            out/make/*.zip
             out/make/**/*.dmg
             out/make/**/*.zip
           if-no-files-found: error

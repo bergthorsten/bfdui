@@ -55,7 +55,7 @@ const config: ForgeConfig = {
         { x: 480, y: 170, type: "link", path: "/Applications" },
       ],
     }),
-    new MakerZIP({}, ["darwin"]),
+    new MakerZIP({}, ["darwin", "linux"]),
     new MakerRpm({ options: { icon: `${iconPath}.png` } }),
     new MakerDeb({ options: { icon: `${iconPath}.png` } }),
   ],
