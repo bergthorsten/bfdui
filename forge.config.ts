@@ -56,8 +56,8 @@ const config: ForgeConfig = {
       ],
     }),
     new MakerZIP({}, ["darwin", "linux"]),
-    new MakerRpm({ options: { icon: `${iconPath}.png` } }),
-    new MakerDeb({ options: { icon: `${iconPath}.png` } }),
+    new MakerRpm({ options: { bin: "BFD", icon: `${iconPath}.png` } }),
+    new MakerDeb({ options: { bin: "BFD", icon: `${iconPath}.png` } }),
   ],
   publishers: [
     new PublisherGithub({
