@@ -6,7 +6,7 @@ i18n.use(initReactI18next).init({
   resources: {
     en: {
       translation: {
-        appName: "BFD",
+        appName: "Bergfreunde Deploy",
         titleHomePage: "Dashboard",
         titleSecondPage: "Dev Systems",
         documentation: "Documentation",
@@ -15,7 +15,7 @@ i18n.use(initReactI18next).init({
     },
     "pt-BR": {
       translation: {
-        appName: "BFD",
+        appName: "Bergfreunde Deploy",
         titleHomePage: "Página Inicial",
         titleSecondPage: "Segunda Página",
         documentation: "Documentação",

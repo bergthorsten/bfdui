@@ -38,7 +38,7 @@ const macPackagerConfig = appleSigningIdentity
 
 const config: ForgeConfig = {
   packagerConfig: {
-    appBundleId: "de.bergfreunde.bfd-desktop",
+    appBundleId: "de.bergfreunde.deploy",
     asar: true,
     icon: iconPath,
     ...macPackagerConfig,
@@ -56,8 +56,8 @@ const config: ForgeConfig = {
       ],
     }),
     new MakerZIP({}, ["darwin", "linux"]),
-    new MakerRpm({ options: { bin: "BFD", icon: `${iconPath}.png` } }),
-    new MakerDeb({ options: { bin: "BFD", icon: `${iconPath}.png` } }),
+    new MakerRpm({ options: { bin: "Bergfreunde Deploy", icon: `${iconPath}.png` } }),
+    new MakerDeb({ options: { bin: "Bergfreunde Deploy", icon: `${iconPath}.png` } }),
   ],
   publishers: [
     new PublisherGithub({

@@ -23,7 +23,7 @@ function BfdMark() {
         viewBox="0 0 24 24"
         width="17"
       >
-        <title>BFD</title>
+        <title>Bergfreunde Deploy</title>
         <path d="M3 19h18L14.5 7.5 11 13l-2.2-3L3 19Z" fill="currentColor" />
       </svg>
     </div>
@@ -36,9 +36,11 @@ export default function AppHeader() {
       <div className="flex min-w-0 items-center gap-3">
         <BfdMark />
         <div className="flex min-w-0 flex-col leading-none">
-          <span className="font-semibold text-sm tracking-tight">BFD</span>
+          <span className="font-semibold text-sm tracking-tight">
+            Bergfreunde Deploy
+          </span>
           <span className="text-[0.625rem] text-muted-foreground">
-            deploy dashboard
+            deployment dashboard
           </span>
         </div>
       </div>
