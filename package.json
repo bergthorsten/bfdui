@@ -1,7 +1,7 @@
 {
   "name": "bergfreunde-deploy",
   "productName": "Bergfreunde Deploy",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Bergfreunde Deploy — deployment dashboard",
   "main": ".vite/build/main.js",
   "repository": {

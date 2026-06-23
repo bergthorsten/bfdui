@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
+import { checkForAppUpdates, getAppVersion } from "@/actions/app";
 import { getBfdConfig, saveBfdConfig, testBfdConnection } from "@/actions/bfd";
 import { Route } from "@/routes/settings";
 import type { AppConfig } from "@/types/bfd";
@@ -14,6 +15,11 @@ vi.mock("@/actions/bfd", () => ({
   getBfdConfig: vi.fn(),
   saveBfdConfig: vi.fn(),
   testBfdConnection: vi.fn(),
+}));
+
+vi.mock("@/actions/app", () => ({
+  checkForAppUpdates: vi.fn(),
+  getAppVersion: vi.fn(),
 }));
 
 vi.mock("@/components/page-header", () => ({
@@ -34,6 +40,7 @@ vi.mock("@/components/page-header", () => ({
 const Settings = (Route as unknown as { options: { component: ComponentType } })
   .options.component;
 
+const CHECK_FOR_UPDATES_PATTERN = /check for updates/i;
 const SAVE_SETTINGS_PATTERN = /save settings/i;
 
 const config: AppConfig = {
@@ -66,6 +73,12 @@ beforeEach(() => {
   vi.mocked(testBfdConnection).mockResolvedValue({
     detail: "Ada Lovelace",
     message: "Connected.",
+    ok: true,
+  });
+  vi.mocked(getAppVersion).mockResolvedValue("0.1.5");
+  vi.mocked(checkForAppUpdates).mockResolvedValue({
+    detail: "Current version: 0.1.5",
+    message: "BFD is up to date.",
     ok: true,
   });
 });
@@ -149,4 +162,19 @@ test("tests connections with current draft config and token values", async () =>
     );
   });
   expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+});
+
+test("checks for app updates manually", async () => {
+  const user = userEvent.setup();
+  renderSettings();
+
+  expect(await screen.findByText("0.1.5")).toBeInTheDocument();
+  await user.click(
+    screen.getByRole("button", { name: CHECK_FOR_UPDATES_PATTERN })
+  );
+
+  await waitFor(() => {
+    expect(checkForAppUpdates).toHaveBeenCalled();
+  });
+  expect(await screen.findByText("BFD is up to date.")).toBeInTheDocument();
 });

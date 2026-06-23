@@ -7,3 +7,7 @@ export function getPlatform() {
 export function getAppVersion() {
   return ipc.client.app.appVersion();
 }
+
+export function checkForAppUpdates() {
+  return ipc.client.app.checkForAppUpdates();
+}

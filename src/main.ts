@@ -5,8 +5,8 @@ import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
 } from "electron-devtools-installer";
-import { UpdateSourceType, updateElectronApp } from "update-electron-app";
 import { ipcContext } from "@/ipc/context";
+import { initializeAppUpdates } from "@/services/app-updates";
 import { startMcpServer, stopMcpServer } from "@/services/mcp";
 import { IPC_CHANNELS, inDevelopment } from "./constants";
 import { getBasePath } from "./utils/path";
@@ -107,13 +107,7 @@ async function installExtensions() {
 }
 
 function checkForUpdates() {
-  updateElectronApp({
-    updateInterval: "1 hour",
-    updateSource: {
-      repo: "bergthorsten/bfdui",
-      type: UpdateSourceType.ElectronPublicUpdateService,
-    },
-  });
+  initializeAppUpdates();
 }
 
 async function setupORPC() {

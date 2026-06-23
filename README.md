@@ -19,6 +19,34 @@ npm test
 npm run test:coverage
 ```
 
+## Updates and Releases
+
+BFD uses `update-electron-app` with GitHub Releases through the public Electron update service. Packaged macOS builds check for updates on startup and then every hour. Users can also open Settings and click `Check for updates`.
+
+When an update has downloaded, Electron shows a native dialog with `Restart` and `Later`. Choosing `Restart` quits and installs the update. During `npm start`, update checks are disabled because the app is running in development mode.
+
+macOS auto-update requires the signed ZIP artifact on the GitHub release. The DMG is for first-time/manual installs.
+
+Release a new macOS version from the trusted signing Mac:
+
+1. Bump `version` in `package.json` and `package-lock.json`.
+2. Commit the version bump and intended app changes.
+3. Ensure `.env` contains Apple signing/notarization values.
+4. Ensure `gh` is authenticated with release write access, or set `GITHUB_TOKEN`.
+5. Run:
+
+```bash
+npm run release:mac
+```
+
+The release command requires a clean working tree. It builds signed macOS artifacts, creates and pushes tag `v<version>`, creates the GitHub Release, and uploads both the DMG and ZIP.
+
+For a local build without publishing:
+
+```bash
+npm run make:mac
+```
+
 ## MCP Server
 
 BFD starts a local MCP Streamable HTTP server automatically while the desktop app is open. It uses the same app configuration, ArgoCD access, and GitHub authentication as the dashboard.
@@ -35,4 +63,4 @@ Available tools:
 
 - Secrets are stored through Electron `safeStorage` when available and are not returned to the renderer. If OS encryption is unavailable, BFD falls back to local plaintext token files.
 - Deployment controls are enabled for final human-run validation; automated agents must not run deployments.
-- Publishing is not configured yet for this internal app.
+- Keep the signed macOS ZIP attached to each GitHub Release; the updater depends on it.

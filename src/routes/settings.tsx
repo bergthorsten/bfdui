@@ -7,8 +7,17 @@ import {
   SiJiraHex,
 } from "@icons-pack/react-simple-icons";
 import { createFileRoute } from "@tanstack/react-router";
-import { CircleCheck, CircleX, FolderGit2, Loader2, Save } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  CircleCheck,
+  CircleX,
+  FolderGit2,
+  Loader2,
+  RefreshCw,
+  Save,
+  Sparkles,
+} from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
+import { checkForAppUpdates, getAppVersion } from "@/actions/app";
 import PageHeader from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +91,64 @@ function TestButton({
   );
 }
 
+function UpdateButton() {
+  const [state, setState] = useState<TestState>("idle");
+  const [result, setResult] = useState<ConnectionResult | null>(null);
+
+  async function run() {
+    setState("testing");
+    setResult(null);
+    try {
+      const next = await checkForAppUpdates();
+      setResult(next);
+      setState(next.ok ? "ok" : "error");
+    } catch (error) {
+      setResult({ ok: false, message: messageOf(error) });
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {state === "ok" && result && (
+        <span
+          aria-live="polite"
+          className="flex max-w-80 items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400"
+          role="status"
+          title={result.detail ?? result.message}
+        >
+          <CircleCheck className="size-3.5 shrink-0" />
+          <span className="truncate">{result.message}</span>
+        </span>
+      )}
+      {state === "error" && result && (
+        <span
+          aria-live="polite"
+          className="flex max-w-80 items-center gap-1 text-red-600 text-xs dark:text-red-400"
+          role="status"
+          title={result.message}
+        >
+          <CircleX className="size-3.5 shrink-0" />
+          <span className="truncate">{result.message}</span>
+        </span>
+      )}
+      <Button
+        disabled={state === "testing"}
+        onClick={run}
+        size="sm"
+        variant="outline"
+      >
+        {state === "testing" ? (
+          <Loader2 className="animate-spin" />
+        ) : (
+          <RefreshCw />
+        )}
+        Check for updates
+      </Button>
+    </div>
+  );
+}
+
 function Field({
   label,
   children,
@@ -133,6 +200,7 @@ function Section({
 }
 
 function Settings() {
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const {
     clearSecret,
     config,
@@ -151,6 +219,25 @@ function Settings() {
     updateGithub,
     updateJira,
   } = useSettingsForm();
+
+  useEffect(() => {
+    let active = true;
+    getAppVersion()
+      .then((version) => {
+        if (active) {
+          setAppVersion(version);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAppVersion(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (loading || !config) {
     return (
@@ -177,6 +264,20 @@ function Settings() {
       />
       <div className="flex min-h-0 flex-1 items-start overflow-auto">
         <div className="mx-auto flex w-full min-w-[48rem] max-w-5xl shrink-0 flex-col gap-4 p-4 pb-24 sm:gap-5 sm:p-6 sm:pb-24">
+          <Section
+            description="Automatic checks run on startup and hourly in packaged releases"
+            icon={<Sparkles className="size-4 text-muted-foreground" />}
+            testButton={<UpdateButton />}
+            title="App updates"
+          >
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs leading-relaxed">
+              Installed version:{" "}
+              <span className="font-mono">{appVersion ?? "unknown"}</span>. When
+              an update finishes downloading, BFD shows a native Restart/Later
+              prompt.
+            </div>
+          </Section>
+
           <Section
             description="Jira Cloud - REST API v3"
             icon={<SiJira className="size-4" color={SiJiraHex} />}
