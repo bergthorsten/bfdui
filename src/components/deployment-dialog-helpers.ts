@@ -73,7 +73,8 @@ export function targetLabel(target: TargetEnvironment) {
 }
 
 export function prioritizedTargets(
-  deployments: DevDeployment[]
+  deployments: DevDeployment[],
+  preferredEnvironment?: string | null
 ): TargetEnvironment[] {
   const deploymentsByEnv = new Map(
     deployments.map((deployment) => [deployment.environment, deployment])
@@ -95,12 +96,57 @@ export function prioritizedTargets(
       reserved,
     } satisfies TargetEnvironment;
   }).sort((a, b) => {
+    if (preferredEnvironment) {
+      const aIsPreferred = a.environment === preferredEnvironment;
+      const bIsPreferred = b.environment === preferredEnvironment;
+      if (aIsPreferred !== bIsPreferred) {
+        return aIsPreferred ? -1 : 1;
+      }
+    }
+
     const groupRank = targetGroupRank(a) - targetGroupRank(b);
     if (groupRank !== 0) {
       return groupRank;
     }
     return targetSortValue(a) - targetSortValue(b);
   });
+}
+
+export function lastDeployedEnvironment(
+  deployments: DevDeployment[]
+): string | null {
+  const latestByTimestamp = deployments
+    .map((deployment) => ({
+      deployment,
+      timestamp: Date.parse(deployment.deployedAt ?? ""),
+    }))
+    .filter((candidate) => Number.isFinite(candidate.timestamp))
+    .toSorted((a, b) => {
+      const timestampDelta = b.timestamp - a.timestamp;
+      if (timestampDelta !== 0) {
+        return timestampDelta;
+      }
+      return compareText(a.deployment.environment, b.deployment.environment);
+    })[0]?.deployment;
+
+  if (latestByTimestamp) {
+    return latestByTimestamp.environment;
+  }
+
+  const latestByAge = deployments
+    .filter(
+      (deployment): deployment is DevDeployment & { ageSeconds: number } =>
+        typeof deployment.ageSeconds === "number"
+    )
+    .toSorted((a, b) => {
+      const ageDelta = a.ageSeconds - b.ageSeconds;
+      if (ageDelta !== 0) {
+        return ageDelta;
+      }
+      return compareText(a.environment, b.environment);
+    })[0];
+
+  return latestByAge?.environment ?? deployments[0]?.environment ?? null;
 }
 
 export function compareText(a: string, b: string) {
@@ -195,6 +241,9 @@ export function workflowInputGroups(
 export function defaultWorkflowInputValue(
   definition: WorkflowInputDefinition
 ): string {
+  if (definition.name.toUpperCase() === "PERFORM_TESTS") {
+    return "false";
+  }
   if (typeof definition.default === "string") {
     return definition.default;
   }

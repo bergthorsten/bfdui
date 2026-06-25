@@ -31,6 +31,7 @@ import {
   filterWorkflowTargets,
   groupWorkflowTargets,
   normalizeWorkflowInputValues,
+  lastDeployedEnvironment,
   preferredWorkflowAlias,
   prioritizedTargets,
   rankWorkflowTargets,
@@ -821,7 +822,14 @@ export default function DeploymentDialog({
 }: DeploymentDialogProps) {
   const queryClient = useQueryClient();
   const branchOptions = uniqueBranches(row);
-  const targets = prioritizedTargets(deployments);
+  const preferredEnvironment = useMemo(
+    () => lastDeployedEnvironment(row.deployments),
+    [row.deployments]
+  );
+  const targets = useMemo(
+    () => prioritizedTargets(deployments, preferredEnvironment),
+    [deployments, preferredEnvironment]
+  );
   const workflowTargetsQuery = useQuery({
     queryKey: ["bfd", "workflowTargets"],
     queryFn: getWorkflowTargets,
@@ -830,11 +838,7 @@ export default function DeploymentDialog({
   });
 
   const [branch, setBranch] = useState(branchOptions[0]);
-  const [environment, setEnvironment] = useState(
-    targets.find((target) => target.isFree)?.environment ??
-      targets[0]?.environment ??
-      "01"
-  );
+  const [environment, setEnvironment] = useState(() => targets[0]?.environment ?? "01");
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [selectedWorkflowNames, setSelectedWorkflowNames] = useState<string[]>(
     []
@@ -929,6 +933,15 @@ export default function DeploymentDialog({
       normalizeWorkflowInputValues(current, selectedInputGroups)
     );
   }, [selectedInputGroups]);
+
+  useEffect(() => {
+    if (targets.length === 0) {
+      return;
+    }
+    if (!targets.some((target) => target.environment === environment)) {
+      setEnvironment(targets[0]?.environment ?? "01");
+    }
+  }, [environment, targets]);
 
   function toggleWorkflowTarget(name: string) {
     setSelectedWorkflowNames((current) => {

@@ -315,6 +315,90 @@ test("prioritizes free targets and shows selected target warnings", async () => 
   expect(screen.getByText(STAGING_WARNING_PATTERN)).toBeInTheDocument();
 });
 
+test("moves last deployed environment to top and preselects it", async () => {
+  renderDialog({
+    deployments: [
+      {
+        ageSeconds: 300,
+        app: "shop",
+        autoSync: "off",
+        branch: "PC-999-owned-system",
+        deployedAt: "2026-06-18T09:55:00.000Z",
+        environment: "01",
+        health: "Healthy",
+        isFree: false,
+        reserved: false,
+        sync: "Synced",
+        ticketKey: "PC-999",
+      },
+      {
+        ageSeconds: 120,
+        app: "shop",
+        autoSync: "off",
+        branch: "PC-123-shop",
+        deployedAt: "2026-06-18T09:58:00.000Z",
+        environment: "04",
+        health: "Healthy",
+        isFree: false,
+        reserved: false,
+        sync: "Synced",
+        ticketKey: "PC-123",
+      },
+    ],
+  });
+
+  expect(await screen.findByText("shop -> app-shop")).toBeInTheDocument();
+  const targetOptions = within(
+    screen.getByRole("listbox", { name: "Target environment" })
+  ).getAllByRole("option");
+
+  expect(targetOptions[0]).toHaveTextContent("dev-04");
+  expect(targetOptions[0]).toHaveAttribute("aria-selected", "true");
+});
+
+test("defaults PERFORM_TESTS to off even when workflow default is true", async () => {
+  const user = userEvent.setup();
+  vi.mocked(getWorkflowTargets).mockResolvedValue({
+    repoPath: "/tmp/shop",
+    targets: [
+      workflowTarget("app-shop", [
+        {
+          name: "ENVIRONMENT",
+          options: ["01", "04"],
+          required: true,
+          type: "choice",
+        },
+        {
+          default: "true",
+          description: "Run workflow tests",
+          name: "PERFORM_TESTS",
+          options: [],
+          required: false,
+          type: "boolean",
+        },
+      ]),
+    ],
+    warnings: [],
+    workflowsPath: "/tmp/shop/.github/workflows",
+  });
+
+  renderDialog();
+
+  const performTestsSwitch = await screen.findByRole("switch", {
+    name: PERFORM_TESTS_SWITCH_PATTERN,
+  });
+  expect(performTestsSwitch).toHaveAttribute("aria-checked", "false");
+
+  await user.click(screen.getByRole("button", { name: DEPLOY_BUTTON_PATTERN }));
+
+  await waitFor(() => {
+    expect(createDeployment).toHaveBeenCalled();
+  });
+
+  const createInput = vi.mocked(createDeployment).mock.calls[0]?.[0];
+  expect(createInput?.workflows[0]?.inputs.PERFORM_TESTS).toBe("false");
+});
+
 test("boosts workflow ranking from PR changed files and affected path globs", () => {
   const ranked = rankWorkflowTargets(
     [
