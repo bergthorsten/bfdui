@@ -26,12 +26,11 @@ import { openExternalLink } from "@/actions/shell";
 import {
   DEPLOYMENT_POLLING_INTERVAL_MS,
   deploymentPollingInterval,
-  deploymentPollingLabel,
   ENVIRONMENT_INPUT_NAMES,
   filterWorkflowTargets,
   groupWorkflowTargets,
-  normalizeWorkflowInputValues,
   lastDeployedEnvironment,
+  normalizeWorkflowInputValues,
   preferredWorkflowAlias,
   prioritizedTargets,
   rankWorkflowTargets,
@@ -45,9 +44,16 @@ import {
   workflowDispatchInputs,
   workflowInputGroups,
 } from "@/components/deployment-dialog-helpers";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -149,6 +155,19 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function pollingStatusLabel(
+  isFetching: boolean,
+  dataUpdatedAt: number
+): string {
+  if (isFetching) {
+    return "Refreshing…";
+  }
+  if (dataUpdatedAt) {
+    return `Checked ${formattedTime(dataUpdatedAt)}`;
+  }
+  return "Awaiting first check";
+}
+
 function pullRequestMeta(
   pullRequest: TicketDeploymentRow["pullRequests"][number]
 ): string {
@@ -185,28 +204,33 @@ function Field({
   );
 }
 
+function humanizeInputName(name: string): string {
+  const spaced = name.replaceAll("_", " ").trim().toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function ToggleLine({
   checked,
-  description,
   id,
   label,
   onCheckedChange,
 }: {
   checked: boolean;
-  description: string;
   id: string;
   label: string;
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2">
-      <span className="grid gap-0.5">
-        <Label className="cursor-pointer text-sm" htmlFor={id}>
-          {label}
-        </Label>
-        <span className="text-muted-foreground text-xs">{description}</span>
-      </span>
-      <Switch checked={checked} id={id} onCheckedChange={onCheckedChange} />
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+      <Label className="min-w-0 truncate font-medium text-sm" htmlFor={id}>
+        {label}
+      </Label>
+      <Switch
+        checked={checked}
+        className="shrink-0"
+        id={id}
+        onCheckedChange={onCheckedChange}
+      />
     </div>
   );
 }
@@ -423,21 +447,16 @@ function WorkflowTargetSelector({
 }
 
 function WorkflowInputs({
-  environmentValue,
   inputGroups,
   inputValues,
   onInputChange,
   rowKey,
 }: {
-  environmentValue: string;
   inputGroups: WorkflowInputGroup[];
   inputValues: Record<string, string>;
   onInputChange: (name: string, value: string) => void;
   rowKey: string;
 }) {
-  const environmentInputs = inputGroups.filter((group) =>
-    ENVIRONMENT_INPUT_NAMES.has(group.definition.name.toUpperCase())
-  );
   const commonBooleanInputs = inputGroups.filter((group) =>
     COMMON_BOOLEAN_INPUT_NAMES.includes(group.definition.name.toUpperCase())
   );
@@ -448,55 +467,43 @@ function WorkflowInputs({
       COMMON_BOOLEAN_INPUT_NAMES.includes(name)
     );
   });
-  const hasInputs =
-    environmentInputs.length > 0 ||
-    commonBooleanInputs.length > 0 ||
-    specialInputs.length > 0;
+  const hasInputs = commonBooleanInputs.length > 0 || specialInputs.length > 0;
 
   if (!hasInputs) {
     return null;
   }
 
   return (
-    <div className="grid gap-2">
-      <Label className="text-muted-foreground text-xs">Workflow inputs</Label>
-      {environmentInputs.length > 0 && (
-        <div className="text-muted-foreground text-xs">
-          <span>Environment inputs: </span>
-          <span className="text-foreground">
-            {environmentInputs
-              .map((group) => `${group.definition.name}=${environmentValue}`)
-              .join(", ")}
-          </span>
-        </div>
-      )}
-      {commonBooleanInputs.map((group) => {
-        const { definition } = group;
-        return (
-          <ToggleLine
-            checked={inputValueAsBoolean(inputValues[definition.name])}
-            description={
-              definition.description || `Used by ${group.targets.join(", ")}.`
-            }
-            id={inputDomId(rowKey, definition.name)}
-            key={definition.name}
-            label={definition.name.replaceAll("_", " ").toLowerCase()}
-            onCheckedChange={(checked) =>
-              onInputChange(definition.name, checked ? "true" : "false")
-            }
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle>Workflow inputs</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-2 pt-0">
+        {commonBooleanInputs.map((group) => {
+          const { definition } = group;
+          return (
+            <ToggleLine
+              checked={inputValueAsBoolean(inputValues[definition.name])}
+              id={inputDomId(rowKey, definition.name)}
+              key={definition.name}
+              label={humanizeInputName(definition.name)}
+              onCheckedChange={(checked) =>
+                onInputChange(definition.name, checked ? "true" : "false")
+              }
+            />
+          );
+        })}
+        {specialInputs.map((group) => (
+          <WorkflowInputControl
+            group={group}
+            key={group.definition.name}
+            onInputChange={onInputChange}
+            rowKey={rowKey}
+            value={inputValues[group.definition.name] ?? ""}
           />
-        );
-      })}
-      {specialInputs.map((group) => (
-        <WorkflowInputControl
-          group={group}
-          key={group.definition.name}
-          onInputChange={onInputChange}
-          rowKey={rowKey}
-          value={inputValues[group.definition.name] ?? ""}
-        />
-      ))}
-    </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -512,16 +519,13 @@ function WorkflowInputControl({
   value: string;
 }) {
   const { definition } = group;
-  const description =
-    definition.description || `Used by ${group.targets.join(", ")}.`;
 
   if (definition.type === "boolean") {
     return (
       <ToggleLine
         checked={inputValueAsBoolean(value)}
-        description={description}
         id={inputDomId(rowKey, definition.name)}
-        label={definition.name}
+        label={humanizeInputName(definition.name)}
         onCheckedChange={(checked) =>
           onInputChange(definition.name, checked ? "true" : "false")
         }
@@ -530,12 +534,12 @@ function WorkflowInputControl({
   }
 
   return (
-    <div className="grid gap-1.5 rounded-lg border border-border px-3 py-2">
+    <div className="grid gap-1.5 rounded-md border border-border px-3 py-2">
       <Label
-        className="font-medium text-xs"
+        className="font-medium text-sm"
         htmlFor={inputDomId(rowKey, definition.name)}
       >
-        {definition.name}
+        {humanizeInputName(definition.name)}
       </Label>
       {definition.options.length > 0 ? (
         <div className="relative">
@@ -564,7 +568,6 @@ function WorkflowInputControl({
           value={value}
         />
       )}
-      <span className="text-muted-foreground text-xs">{description}</span>
     </div>
   );
 }
@@ -572,79 +575,61 @@ function WorkflowInputControl({
 function WorkflowSummary({
   branch,
   environment,
-  inputValues,
   workflows,
 }: {
   branch: string;
   environment: TargetEnvironment | undefined;
-  inputValues: Record<string, string>;
   workflows: WorkflowTarget[];
 }) {
   const environmentValue = environment?.cliValue ?? "01";
   const workflowCommandValue =
     workflows.map(preferredWorkflowAlias).join(" ") || "<workflow>";
   const workflowLabel = workflows.length === 1 ? "workflow" : "workflows";
+
   return (
-    <div className="grid gap-4 border-border border-l pl-4">
-      <div className="grid gap-1.5">
-        <div className="font-medium text-sm">Preflight</div>
-        <p className="text-muted-foreground text-sm leading-relaxed">
+    <Card>
+      <CardHeader className="gap-1 pb-3">
+        <CardTitle>Preflight</CardTitle>
+        <CardDescription className="flex flex-wrap items-center gap-x-1 gap-y-1">
           Deploy <span className="font-medium text-foreground">{branch}</span>
-          {" to "}
-          <span className="font-medium text-foreground">
+          <span>to</span>
+          <span className="rounded-md border border-yellow-300 bg-yellow-100 px-1.5 py-0.5 font-semibold text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-200">
             {environment?.displayName ?? "dev-01"}
           </span>
-          {" with "}
+          <span>·</span>
           <span className="font-medium text-foreground">
             {workflows.length || "no"} {workflowLabel}
           </span>
-          .
-        </p>
-      </div>
-      <div className="rounded-md border border-border bg-muted/20 px-3 py-2 font-mono text-[0.6875rem] text-muted-foreground">
-        bfd d {workflowCommandValue} -r {branch} -e {environmentValue}
-      </div>
-      <div className="grid gap-2 text-xs">
-        <div className="font-medium text-muted-foreground">Workflows</div>
-        {workflows.length === 0 && (
-          <span className="text-muted-foreground">No workflow selected.</span>
-        )}
-        {workflows.map((workflow) => (
-          <span className="grid gap-0.5" key={workflow.name}>
-            <span className="font-medium">
-              {preferredWorkflowAlias(workflow)}
-            </span>
-            <span className="truncate text-muted-foreground">
-              {workflow.path}
-            </span>
-          </span>
-        ))}
-      </div>
-      {workflows.length > 0 && (
-        <div className="grid gap-2 text-xs">
-          <div className="font-medium text-muted-foreground">Inputs</div>
-          {workflows.map((workflow) => {
-            const inputs = workflowDispatchInputs(
-              workflow,
-              inputValues,
-              environmentValue
-            );
-            return (
-              <span className="grid gap-1" key={`${workflow.name}-inputs`}>
-                <span className="text-muted-foreground">{workflow.name}</span>
-                <span>
-                  {Object.keys(inputs).length === 0
-                    ? "none"
-                    : Object.entries(inputs)
-                        .map(([name, value]) => `${name}=${value}`)
-                        .join(", ")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 pt-0">
+        <pre className="whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-[0.6875rem] text-muted-foreground">
+          <code>
+            bfd d {workflowCommandValue} -r {branch} -e {environmentValue}
+          </code>
+        </pre>
+
+        {workflows.length === 0 ? (
+          <p className="text-muted-foreground text-xs">No workflow selected.</p>
+        ) : (
+          <ul className="grid gap-1.5">
+            {workflows.map((workflow) => (
+              <li
+                className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-2"
+                key={workflow.name}
+              >
+                <span className="truncate font-medium text-sm">
+                  {preferredWorkflowAlias(workflow)}
                 </span>
-              </span>
-            );
-          })}
-        </div>
-      )}
-    </div>
+                <span className="shrink-0 font-mono text-[0.625rem] text-muted-foreground">
+                  {workflow.fileName}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -663,18 +648,16 @@ function DeploymentProgress({
 }) {
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-muted/20 p-4 text-muted-foreground text-xs">
-        <div className="flex items-center gap-2">
-          <Loader2 className="size-3.5 animate-spin" />
-          Loading deployment run state...
-        </div>
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-muted-foreground text-xs">
+        <Loader2 className="size-3.5 animate-spin" />
+        Loading deployment run state...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive text-xs">
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs">
         Deployment polling failed: {messageOf(error)}
       </div>
     );
@@ -685,25 +668,22 @@ function DeploymentProgress({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="grid gap-0.5">
-          <div className="font-medium text-sm">Deployment run</div>
-          <div className="text-muted-foreground text-xs">
-            {dataUpdatedAt
-              ? `Last checked ${formattedTime(dataUpdatedAt)}. `
-              : "Waiting for first status check. "}
-            {isFetching ? "Refreshing now..." : deploymentPollingLabel(batch)}
-          </div>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-2 pb-3">
+        <div className="grid gap-1">
+          <CardTitle>Deployment run</CardTitle>
+          <CardDescription>
+            {pollingStatusLabel(isFetching, dataUpdatedAt)}
+          </CardDescription>
         </div>
         <Badge variant={deploymentStateTone(batch.aggregateState)}>
           {deploymentStateLabel(batch.aggregateState)}
         </Badge>
-      </div>
-      <div className="grid gap-2">
+      </CardHeader>
+      <CardContent className="grid gap-1.5 pt-0">
         {batch.workflows.map((workflow) => (
           <div
-            className="grid gap-1 rounded-lg border border-border bg-background px-3 py-2"
+            className="grid gap-0.5 rounded-md border border-border bg-background px-2.5 py-2"
             key={`${workflow.targetName}-${workflow.environment}`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -714,9 +694,9 @@ function DeploymentProgress({
                 {deploymentStateLabel(workflow.state)}
               </Badge>
             </div>
-            <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
-              <span className="truncate">
-                {workflow.runId ? `run #${workflow.runId}` : "waiting for run"}
+            <div className="flex items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+              <span className="truncate font-mono">
+                {workflow.runId ? `#${workflow.runId}` : "waiting for run"}
               </span>
               {workflow.runUrl && (
                 <button
@@ -730,14 +710,14 @@ function DeploymentProgress({
               )}
             </div>
             {workflow.dispatchError && (
-              <div className="text-destructive text-xs">
+              <div className="text-[0.6875rem] text-destructive">
                 {workflow.dispatchError}
               </div>
             )}
           </div>
         ))}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -756,11 +736,12 @@ function DeploymentFeedback({
 
   if (createError) {
     return (
-      <Alert variant="danger">
-        <AlertDescription>
-          <div className="font-medium">Deployment failed to start</div>
-          <div className="text-xs">{messageOf(createError)}</div>
-        </AlertDescription>
+      <Alert className="flex items-start gap-2 text-xs" variant="danger">
+        <CircleX className="mt-px size-3.5 shrink-0" />
+        <span>
+          <span className="font-medium">Deployment failed to start. </span>
+          {messageOf(createError)}
+        </span>
       </Alert>
     );
   }
@@ -774,42 +755,40 @@ function DeploymentFeedback({
     const failedWorkflows = batch.workflows.filter((workflow) =>
       ["failure", "timed-out", "cancelled"].includes(workflow.state)
     );
+    const succeeded = batch.aggregateState === "success";
+    const detail =
+      failedWorkflows.length > 0
+        ? `${failedWorkflows.length} need attention`
+        : `${batch.workflows.length} finished`;
     return (
       <Alert
-        variant={batch.aggregateState === "success" ? "success" : "danger"}
+        className="flex items-center gap-2 text-xs"
+        variant={succeeded ? "success" : "danger"}
       >
-        <AlertDescription>
-          <div className="flex items-center gap-2 font-medium">
-            {batch.aggregateState === "success" ? (
-              <CircleCheck className="size-4" />
-            ) : (
-              <CircleX className="size-4" />
-            )}
-            {terminalTitle}
-          </div>
-          <div className="mt-1 text-xs">
-            {failedWorkflows.length > 0
-              ? `${failedWorkflows.length} workflow${failedWorkflows.length === 1 ? "" : "s"} need attention.`
-              : `${batch.workflows.length} workflow${batch.workflows.length === 1 ? "" : "s"} finished successfully.`}
-          </div>
-        </AlertDescription>
+        {succeeded ? (
+          <CircleCheck className="size-3.5 shrink-0" />
+        ) : (
+          <CircleX className="size-3.5 shrink-0" />
+        )}
+        <span>
+          <span className="font-medium">{terminalTitle}</span>
+          {" · "}
+          {detail}
+        </span>
       </Alert>
     );
   }
 
   return (
-    <Alert variant="success">
-      <AlertDescription>
-        <div className="flex items-center gap-2 font-medium">
-          <CircleCheck className="size-4" />
-          Deployment started successfully
-        </div>
-        <div className="mt-1 text-xs">
-          {batch.workflows.length} workflow
-          {batch.workflows.length === 1 ? "" : "s"} dispatched to{" "}
-          {batch.environment}.
-        </div>
-      </AlertDescription>
+    <Alert className="flex items-center gap-2 text-xs" variant="success">
+      <CircleCheck className="size-3.5 shrink-0" />
+      <span>
+        <span className="font-medium">Deployment started</span>
+        {" · "}
+        {batch.workflows.length} workflow
+        {batch.workflows.length === 1 ? "" : "s"} dispatched to{" "}
+        {batch.environment}
+      </span>
     </Alert>
   );
 }
@@ -838,7 +817,9 @@ export default function DeploymentDialog({
   });
 
   const [branch, setBranch] = useState(branchOptions[0]);
-  const [environment, setEnvironment] = useState(() => targets[0]?.environment ?? "01");
+  const [environment, setEnvironment] = useState(
+    () => targets[0]?.environment ?? "01"
+  );
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [selectedWorkflowNames, setSelectedWorkflowNames] = useState<string[]>(
     []
@@ -991,7 +972,7 @@ export default function DeploymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid gap-6 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
           <section className="grid content-start gap-4">
             <Field label="Branch/ref">
               <div className="relative">
@@ -1031,22 +1012,20 @@ export default function DeploymentDialog({
               targets={visibleWorkflowTargets}
               warnings={workflowTargetsQuery.data?.warnings ?? []}
             />
+          </section>
+
+          <aside className="grid min-w-0 content-start gap-3">
+            <WorkflowSummary
+              branch={branch}
+              environment={selectedTarget}
+              workflows={selectedWorkflowTargets}
+            />
 
             <WorkflowInputs
-              environmentValue={environmentValue}
               inputGroups={selectedInputGroups}
               inputValues={workflowInputValues}
               onInputChange={updateWorkflowInput}
               rowKey={row.ticket.key}
-            />
-          </section>
-
-          <aside className="grid content-start gap-3">
-            <WorkflowSummary
-              branch={branch}
-              environment={selectedTarget}
-              inputValues={workflowInputValues}
-              workflows={selectedWorkflowTargets}
             />
 
             <DeploymentFeedback
@@ -1064,10 +1043,10 @@ export default function DeploymentDialog({
             />
 
             {warning && (
-              <div className="border-amber-500/60 border-l-2 pl-4 text-amber-700 text-sm dark:text-amber-300">
-                <div className="mb-1 font-medium">{warning.title}</div>
-                <p className="text-xs leading-relaxed">{warning.body}</p>
-              </div>
+              <Alert className="grid gap-0.5 text-xs" variant="warning">
+                <span className="font-medium">{warning.title}</span>
+                <span className="leading-relaxed">{warning.body}</span>
+              </Alert>
             )}
           </aside>
         </div>
