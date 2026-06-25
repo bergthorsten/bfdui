@@ -143,7 +143,9 @@ const failedBatch: DeploymentBatch = {
   ],
 };
 
-function renderDialog(options: { deployments?: DevDeployment[] } = {}) {
+function renderDialog(
+  options: { deployments?: DevDeployment[]; row?: TicketDeploymentRow } = {}
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -153,7 +155,7 @@ function renderDialog(options: { deployments?: DevDeployment[] } = {}) {
         deployments={options.deployments ?? deployments}
         onOpenChange={vi.fn()}
         open={true}
-        row={row}
+        row={options.row ?? row}
       />
     </QueryClientProvider>
   );
@@ -316,35 +318,38 @@ test("prioritizes free targets and shows selected target warnings", async () => 
 });
 
 test("moves last deployed environment to top and preselects it", async () => {
+  const currentDeployments: DevDeployment[] = [
+    {
+      ageSeconds: 300,
+      app: "shop",
+      autoSync: "off",
+      branch: "PC-999-owned-system",
+      deployedAt: "2026-06-18T09:55:00.000Z",
+      environment: "01",
+      health: "Healthy",
+      isFree: false,
+      reserved: false,
+      sync: "Synced",
+      ticketKey: "PC-999",
+    },
+    {
+      ageSeconds: 120,
+      app: "shop",
+      autoSync: "off",
+      branch: "PC-123-shop",
+      deployedAt: "2026-06-18T09:58:00.000Z",
+      environment: "04",
+      health: "Healthy",
+      isFree: false,
+      reserved: false,
+      sync: "Synced",
+      ticketKey: "PC-123",
+    },
+  ];
+
   renderDialog({
-    deployments: [
-      {
-        ageSeconds: 300,
-        app: "shop",
-        autoSync: "off",
-        branch: "PC-999-owned-system",
-        deployedAt: "2026-06-18T09:55:00.000Z",
-        environment: "01",
-        health: "Healthy",
-        isFree: false,
-        reserved: false,
-        sync: "Synced",
-        ticketKey: "PC-999",
-      },
-      {
-        ageSeconds: 120,
-        app: "shop",
-        autoSync: "off",
-        branch: "PC-123-shop",
-        deployedAt: "2026-06-18T09:58:00.000Z",
-        environment: "04",
-        health: "Healthy",
-        isFree: false,
-        reserved: false,
-        sync: "Synced",
-        ticketKey: "PC-123",
-      },
-    ],
+    deployments: currentDeployments,
+    row: { ...row, deployments: currentDeployments },
   });
 
   expect(await screen.findByText("shop -> app-shop")).toBeInTheDocument();
