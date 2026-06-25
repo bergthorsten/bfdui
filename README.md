@@ -25,6 +25,8 @@ BFD uses `update-electron-app` with GitHub Releases through the public Electron 
 
 When an update has downloaded, Electron shows a native dialog with `Restart` and `Later`. Choosing `Restart` quits and installs the update. During `npm start`, update checks are disabled because the app is running in development mode.
 
+Supported release artifacts are macOS and Linux only. There is no Windows version of BFD Desktop; do not publish or announce Windows builds.
+
 macOS auto-update requires the signed ZIP artifact on the GitHub release. The DMG is for first-time/manual installs.
 
 Release a new macOS version from the trusted signing Mac:
@@ -39,7 +41,7 @@ Release a new macOS version from the trusted signing Mac:
 npm run release:mac
 ```
 
-The release command requires a clean working tree. It builds signed macOS artifacts, creates and pushes tag `v<version>`, creates the GitHub Release, and uploads both the DMG and ZIP.
+The release command requires a clean working tree. It builds signed macOS artifacts, creates and pushes tag `v<version>`, creates the GitHub Release, and uploads both the DMG and ZIP. The pushed tag also triggers the Desktop Builds workflow, which attaches Linux DEB/RPM/ZIP artifacts to the same release.
 
 For a local build without publishing:
 

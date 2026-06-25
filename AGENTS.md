@@ -73,11 +73,12 @@ We want to build something relay good and stable! So dont just copy past, When y
 ## Auto-Updates and Releases
 
 - BFD uses `update-electron-app` with `update.electronjs.org` and GitHub Releases for packaged macOS updates.
+- Supported release artifacts are macOS and Linux only. There is no Windows version; do not trigger Windows publishing workflows or create Windows release assets.
 - In production, the app checks on startup and hourly. Settings also exposes a manual `Check for updates` button.
 - When an update is downloaded, Electron shows a native `Restart` / `Later` dialog; choosing `Restart` installs the update.
 - `npm start` is development mode, so update checks intentionally log that they are disabled.
 - macOS auto-update requires a signed ZIP asset attached to the GitHub Release. The DMG is for first-time/manual installs.
-- Use `npm run release:mac` from the trusted signing Mac for real releases. It expects a clean tree, builds signed macOS artifacts, creates/pushes `v<package.json version>`, creates the GitHub Release, and uploads DMG + ZIP assets.
+- Use `npm run release:mac` from the trusted signing Mac for real releases. It expects a clean tree, builds signed macOS artifacts, creates/pushes `v<package.json version>`, creates the GitHub Release, and uploads DMG + ZIP assets. The pushed tag triggers the Desktop Builds workflow to upload Linux DEB/RPM/ZIP artifacts to the same release.
 - Before `npm run release:mac`, commit the version bump and app changes. `.env` must contain Apple signing/notarization values, and `gh` must be authenticated or `GITHUB_TOKEN` must be set.
 - Use `npm run make:mac` only for local artifact testing; it does not create a GitHub Release and does not make assets downloadable.
 - Never commit Apple credentials, app-specific passwords, GitHub tokens, `.p12` certificates, or generated `out/` artifacts.
