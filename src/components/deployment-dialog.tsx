@@ -9,6 +9,7 @@ import {
   Loader2,
   Rocket,
   Search,
+  X,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -343,11 +344,21 @@ function WorkflowTargetSelector({
       <div className="relative">
         <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
-          className="h-8 pl-8"
+          className="h-8 px-8"
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search workflow or alias..."
           value={query}
         />
+        {query && (
+          <button
+            aria-label="Clear workflow search"
+            className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            onClick={() => onQueryChange("")}
+            type="button"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
       </div>
 
       {warnings.map((warning) => (

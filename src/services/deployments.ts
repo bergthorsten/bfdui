@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { app, Notification } from "electron";
+import { ipcContext } from "@/ipc/context";
 import type {
   GitHubService,
   GitHubWorkflowJobSummary,
@@ -32,7 +33,15 @@ type DeploymentWorkflows = Pick<
 >;
 
 interface DeploymentNotifier {
-  notify: (title: string, body: string) => void;
+  notify: (
+    title: string,
+    body: string,
+    options?: DeploymentNotificationOptions
+  ) => void;
+}
+
+interface DeploymentNotificationOptions {
+  attention?: boolean;
 }
 
 export interface DeploymentServiceOptions {
@@ -382,7 +391,8 @@ export class DeploymentService {
     }
     this.notifier.notify(
       title,
-      `${batch.workflows.length} workflow${batch.workflows.length === 1 ? "" : "s"} finished for ${batch.ticketKey ?? batch.branch}.`
+      `${batch.workflows.length} workflow${batch.workflows.length === 1 ? "" : "s"} finished for ${batch.ticketKey ?? batch.branch}.`,
+      { attention: true }
     );
   }
 
@@ -433,11 +443,33 @@ export class DeploymentService {
 }
 
 class ElectronDeploymentNotifier implements DeploymentNotifier {
-  notify(title: string, body: string): void {
-    if (!Notification.isSupported()) {
-      return;
+  notify(
+    title: string,
+    body: string,
+    options: DeploymentNotificationOptions = {}
+  ): void {
+    if (Notification.isSupported()) {
+      const notification = new Notification({ body, title });
+      notification.on("click", focusMainWindow);
+      notification.show();
     }
-    new Notification({ body, title }).show();
+    if (options.attention) {
+      requestMainWindowAttention();
+    }
+  }
+}
+
+function focusMainWindow(): void {
+  const window = ipcContext.mainWindow;
+  window?.show();
+  window?.focus();
+}
+
+function requestMainWindowAttention(): void {
+  const window = ipcContext.mainWindow;
+  window?.flashFrame(true);
+  if (process.platform === "darwin") {
+    app.dock?.bounce("informational");
   }
 }
 
@@ -584,7 +616,7 @@ function shopDeploymentStateFromJobs(
     `Deploy ${environment} to k8s`,
   ];
   const matchedJobs = requiredJobs.map((name) =>
-    jobs.find((job) => job.name === name)
+    jobs.find((job) => job.name === name || job.name.includes(name))
   );
 
   if (matchedJobs.some((job) => !job)) {

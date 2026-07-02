@@ -11,8 +11,14 @@ import {
 
 describe("status helpers", () => {
   test("maps known statuses to badge variants", () => {
-    expect(jiraStatusVariant("Done", "occupied")).toBe("success");
-    expect(jiraStatusVariant("In Testing", "occupied")).toBe("purple");
+    expect(jiraStatusVariant("Awaiting go live", "occupied")).toBe("success");
+    expect(jiraStatusVariant("Fertig", "occupied")).toBe("successStrong");
+    expect(jiraStatusVariant("Finished", "occupied")).toBe("successStrong");
+    expect(jiraStatusVariant("Acceptance Test", "occupied")).toBe("acceptance");
+    expect(jiraStatusVariant("Awaiting Testing", "occupied")).toBe(
+      "testingPending"
+    );
+    expect(jiraStatusVariant("In Testing", "occupied")).toBe("testing");
     expect(jiraStatusVariant("Review", "occupied")).toBe("warning");
     expect(jiraStatusVariant("Something Else", "backlog")).toBe("muted");
     expect(syncVariant("OutOfSync")).toBe("warning");

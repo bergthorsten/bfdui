@@ -218,6 +218,7 @@ test("shows active sprint name, goal, and remaining time in the header", async (
 });
 
 test("focuses and selects dashboard search with Ctrl+F", async () => {
+  const user = userEvent.setup();
   vi.mocked(getSprintTickets).mockResolvedValue([
     ticket("PC-101", "No development yet"),
   ]);
@@ -233,6 +234,11 @@ test("focuses and selects dashboard search with Ctrl+F", async () => {
   expect(search).toHaveFocus();
   expect((search as HTMLInputElement).selectionStart).toBe(0);
   expect((search as HTMLInputElement).selectionEnd).toBe("PC-101".length);
+
+  await user.click(screen.getByRole("button", { name: "Clear search" }));
+
+  expect(search).toHaveValue("");
+  expect(search).toHaveFocus();
 });
 
 test("filters loaded sprint rows locally and only uses global Jira search after local misses", async () => {

@@ -10,14 +10,18 @@ type BadgeVariant =
   | "secondary"
   | "outline"
   | "success"
+  | "successStrong"
   | "warning"
   | "danger"
   | "info"
   | "muted"
-  | "purple";
+  | "acceptance"
+  | "testing"
+  | "testingPending";
 
 const WHITESPACE_PATTERN = /\s+/;
-const STATUS_DONE = new Set(["Awaiting go live", "Done", "Erledigt", "Fertig"]);
+const STATUS_DONE = new Set(["Awaiting go live", "Awaiting go Live"]);
+const STATUS_FINISHED = new Set(["Done", "Erledigt", "Fertig", "Finished"]);
 const STATUS_TODO = new Set([
   "Backlog",
   "Selected for Development",
@@ -26,11 +30,6 @@ const STATUS_TODO = new Set([
 ]);
 const STATUS_PROGRESS = new Set(["In Arbeit", "In Progress"]);
 const STATUS_REVIEW = new Set(["Awaiting Review", "Clarification", "Review"]);
-const STATUS_TESTING = new Set([
-  "Acceptance Test",
-  "Awaiting testing",
-  "In Testing",
-]);
 const STATUS_BLOCKED = new Set(["Blocked", "Rejected"]);
 
 export function jiraStatusVariant(
@@ -40,8 +39,17 @@ export function jiraStatusVariant(
   if (STATUS_DONE.has(status)) {
     return "success";
   }
-  if (STATUS_TESTING.has(status)) {
-    return "purple";
+  if (STATUS_FINISHED.has(status)) {
+    return "successStrong";
+  }
+  if (status === "Acceptance Test") {
+    return "acceptance";
+  }
+  if (status === "Awaiting testing" || status === "Awaiting Testing") {
+    return "testingPending";
+  }
+  if (status === "In Testing") {
+    return "testing";
   }
   if (STATUS_REVIEW.has(status)) {
     return "warning";

@@ -214,7 +214,8 @@ describe("DeploymentService", () => {
     expect(succeeded.aggregateState).toBe("success");
     expect(notifier.notify).toHaveBeenCalledWith(
       "Deployment succeeded",
-      "1 workflow finished for PC-123."
+      "1 workflow finished for PC-123.",
+      { attention: true }
     );
   });
 
@@ -268,6 +269,66 @@ describe("DeploymentService", () => {
       state: "success",
     });
     expect(github.listWorkflowRunJobs).toHaveBeenCalledWith(987);
+  });
+
+  test("ignores waiting critical-css jobs for prefixed shop deploy jobs", async () => {
+    const runWaitingForCriticalCss = {
+      conclusion: null,
+      createdAt: "2026-06-18T10:00:02.000Z",
+      currentAttempt: 1,
+      event: "workflow_dispatch",
+      headBranch: "PC-123-shop",
+      id: 987,
+      status: "waiting",
+      updatedAt: "2026-06-18T10:03:00.000Z",
+      url: "https://github.com/bergfreunde/shop/actions/runs/987",
+    };
+    const github = {
+      listWorkflowRunJobs: vi.fn().mockResolvedValue([
+        {
+          completedAt: "2026-06-18T10:01:00.000Z",
+          conclusion: "success",
+          id: 1,
+          name: "Deploy 'shop' / Deploy 04 to adminserver",
+          startedAt: "2026-06-18T10:00:30.000Z",
+          status: "completed",
+          url: "https://github.example/jobs/1",
+        },
+        {
+          completedAt: "2026-06-18T10:02:00.000Z",
+          conclusion: "success",
+          id: 2,
+          name: "Deploy 'shop' / Deploy 04 to k8s",
+          startedAt: "2026-06-18T10:01:30.000Z",
+          status: "completed",
+          url: "https://github.example/jobs/2",
+        },
+        {
+          completedAt: null,
+          conclusion: null,
+          id: 3,
+          name: "Deploy 'shop' / Critical css on 04",
+          startedAt: "2026-06-18T10:02:00.000Z",
+          status: "waiting",
+          url: "https://github.example/jobs/3",
+        },
+      ]),
+      listWorkflowRuns: vi.fn().mockResolvedValue([runWaitingForCriticalCss]),
+    };
+    const { service } = serviceFor({ github });
+
+    const batch = await service.createDeployment({
+      branch: "PC-123-shop",
+      environment: "04",
+      ticketKey: "PC-123",
+      workflows: [{ inputs: {}, name: "app-shop" }],
+    });
+
+    expect(batch.aggregateState).toBe("success");
+    expect(batch.workflows[0]).toMatchObject({
+      runId: 987,
+      state: "success",
+    });
   });
 
   test("times out runs that never appear", async () => {

@@ -17,6 +17,7 @@ let isQuitting = false;
 const WINDOW_HEIGHT = 860;
 const WINDOW_MIN_HEIGHT = 720;
 const WINDOW_MAX_HEIGHT = 1600;
+const APP_USER_MODEL_ID = "de.bergfreunde.deploy";
 
 function createWindow() {
   const basePath = getBasePath();
@@ -154,6 +155,9 @@ function isTrustedRendererUrl(value: string): boolean {
 
 app.whenReady().then(async () => {
   try {
+    if (process.platform === "win32") {
+      app.setAppUserModelId(APP_USER_MODEL_ID);
+    }
     createWindow();
     await setupORPC();
     startMcpServer().catch((error) => {

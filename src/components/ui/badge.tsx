@@ -13,6 +13,8 @@ const badgeVariants = cva(
         outline: "border-border text-foreground",
         success:
           "border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+        successStrong:
+          "border-transparent bg-emerald-600/20 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
         warning:
           "border-transparent bg-amber-500/15 text-amber-600 dark:text-amber-400",
         danger:
@@ -21,6 +23,12 @@ const badgeVariants = cva(
         muted: "border-transparent bg-muted text-muted-foreground",
         purple:
           "border-transparent bg-violet-500/15 text-violet-600 dark:text-violet-400",
+        acceptance:
+          "border-transparent bg-teal-500/15 text-violet-700 dark:text-violet-300",
+        testing:
+          "border-transparent bg-violet-500/15 text-violet-700 dark:text-violet-300",
+        testingPending:
+          "border-transparent bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
       },
     },
     defaultVariants: {
