@@ -2,18 +2,25 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   ExternalLink,
+  Filter,
   Loader2,
   Rocket,
   TriangleAlert,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { openExternalLink } from "@/actions/shell";
 import DeploymentDialog from "@/components/deployment-dialog";
 import { JiraStatusBadge, PullRequestBadge } from "@/components/status-badges";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -39,21 +46,38 @@ import type {
 
 type SortDirection = "asc" | "desc";
 type SortKey = "assignee" | "deployed" | "prs" | "status" | "ticket" | "title";
+type FilterKey = "assignee" | "status";
 
 interface SortState {
   direction: SortDirection;
   key: SortKey;
 }
 
-const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
-  [
-    { key: "ticket", label: "Ticket", className: "w-[5rem]" },
-    { key: "title", label: "Title" },
-    { key: "status", label: "Status", className: "w-[12rem]" },
-    { key: "assignee", label: "Assignee", className: "w-[10rem]" },
-    { key: "prs", label: "PRs", className: "w-[15rem]" },
-    { key: "deployed", label: "Deployed to", className: "w-[11rem]" },
-  ];
+const ALL_FILTER_VALUE = "__all__";
+const UNASSIGNED_FILTER_VALUE = "__unassigned__";
+const SORTABLE_HEADERS: {
+  className?: string;
+  filterKey?: FilterKey;
+  key: SortKey;
+  label: string;
+}[] = [
+  { key: "ticket", label: "Ticket", className: "w-[5rem]" },
+  { key: "title", label: "Title" },
+  {
+    key: "status",
+    label: "Status",
+    className: "w-[12rem]",
+    filterKey: "status",
+  },
+  {
+    key: "assignee",
+    label: "Assignee",
+    className: "w-[10rem]",
+    filterKey: "assignee",
+  },
+  { key: "prs", label: "PRs", className: "w-[15rem]" },
+  { key: "deployed", label: "Deployed to", className: "w-[11rem]" },
+];
 const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
   "cancelled",
   "failure",
@@ -62,7 +86,9 @@ const TERMINAL_DEPLOYMENT_STATES = new Set<DeploymentRunState>([
 ]);
 
 function isActiveDeployment(batch: DeploymentBatch | undefined): boolean {
-  return Boolean(batch && !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState));
+  return Boolean(
+    batch && !TERMINAL_DEPLOYMENT_STATES.has(batch.aggregateState)
+  );
 }
 
 function ticketSortValue(ticketKey: string): [string, number] {
@@ -137,12 +163,14 @@ function SortIcon({
 
 function SortHeader({
   className,
+  filter,
   label,
   sortKey,
   sort,
   onSort,
 }: {
   className?: string;
+  filter?: ReactNode;
   label: string;
   onSort: (key: SortKey) => void;
   sort: SortState;
@@ -151,15 +179,118 @@ function SortHeader({
   const active = sort.key === sortKey;
   return (
     <TableHead className={className}>
-      <button
-        className="inline-flex items-center gap-1 text-left uppercase tracking-wide hover:text-foreground"
-        onClick={() => onSort(sortKey)}
-        type="button"
-      >
-        {label}
-        <SortIcon active={active} direction={sort.direction} />
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          className="inline-flex items-center gap-1 text-left uppercase tracking-wide hover:text-foreground"
+          onClick={() => onSort(sortKey)}
+          type="button"
+        >
+          {label}
+          <SortIcon active={active} direction={sort.direction} />
+        </button>
+        {filter}
+      </div>
     </TableHead>
+  );
+}
+
+function FilterButton({
+  active,
+  label,
+  ...props
+}: {
+  active: boolean;
+  label: string;
+} & ComponentProps<typeof Button>) {
+  return (
+    <Button
+      aria-label={label}
+      className="relative size-5 rounded-sm p-0"
+      size="icon-xs"
+      type="button"
+      variant={active ? "secondary" : "ghost"}
+      {...props}
+    >
+      <Filter className="size-3" />
+      {active && (
+        <span className="absolute top-0.5 right-0.5 size-1 rounded-full bg-primary" />
+      )}
+    </Button>
+  );
+}
+
+function ColumnFilterPopover({
+  allLabel,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  allLabel: string;
+  label: string;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel =
+    options.find((option) => option.value === value)?.label ?? allLabel;
+
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <FilterButton active={value !== ALL_FILTER_VALUE} label={label} />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-52"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
+          {label}
+        </div>
+        <div className="grid gap-1 border-border border-b pb-1">
+          <button
+            aria-pressed={value === ALL_FILTER_VALUE}
+            className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left font-medium text-primary text-sm outline-none transition-colors hover:bg-primary/10 focus-visible:bg-primary/10"
+            onClick={() => {
+              onChange(ALL_FILTER_VALUE);
+              setOpen(false);
+            }}
+            type="button"
+          >
+            <span>{allLabel}</span>
+            {value === ALL_FILTER_VALUE && (
+              <Check className="size-3.5 text-primary" />
+            )}
+          </button>
+        </div>
+        <div className="mt-1 grid gap-0.5">
+          {options.map((option) => {
+            const selected = option.value === value;
+
+            return (
+              <button
+                aria-pressed={selected}
+                className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-muted focus-visible:bg-muted"
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                type="button"
+              >
+                <span className="truncate">{option.label}</span>
+                {selected && <Check className="size-3.5 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="border-border border-t px-2 py-1.5 text-muted-foreground text-xs">
+          Showing: {selectedLabel}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -337,14 +468,56 @@ export default function TicketsTable({
     key: "ticket",
     direction: "asc",
   });
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({
+    assignee: ALL_FILTER_VALUE,
+    status: ALL_FILTER_VALUE,
+  });
 
+  const statusOptions = useMemo(
+    () =>
+      [...new Set(rows.map((row) => row.ticket.status))]
+        .sort(compareText)
+        .map((status) => ({ label: status, value: status })),
+    [rows]
+  );
+  const assigneeOptions = useMemo(() => {
+    const assignees = rows
+      .map((row) => row.ticket.assignee)
+      .filter((assignee): assignee is string => Boolean(assignee));
+    const options = [...new Set(assignees)]
+      .sort(compareText)
+      .map((assignee) => ({
+        label: assignee,
+        value: assignee,
+      }));
+
+    return rows.some((row) => !row.ticket.assignee)
+      ? [{ label: "Unassigned", value: UNASSIGNED_FILTER_VALUE }, ...options]
+      : options;
+  }, [rows]);
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const statusMatches =
+          filters.status === ALL_FILTER_VALUE ||
+          row.ticket.status === filters.status;
+        const assigneeMatches =
+          filters.assignee === ALL_FILTER_VALUE ||
+          (filters.assignee === UNASSIGNED_FILTER_VALUE
+            ? !row.ticket.assignee
+            : row.ticket.assignee === filters.assignee);
+
+        return statusMatches && assigneeMatches;
+      }),
+    [filters, rows]
+  );
   const sortedRows = useMemo(
     () =>
-      rows.toSorted((a, b) => {
+      filteredRows.toSorted((a, b) => {
         const result = compareRows(a, b, sort.key);
         return sort.direction === "asc" ? result : -result;
       }),
-    [rows, sort]
+    [filteredRows, sort]
   );
   const deploymentByTicket = useMemo(
     () => latestDeploymentByTicket(deploymentBatches),
@@ -359,6 +532,38 @@ export default function TicketsTable({
     }));
   }
 
+  function updateFilter(key: FilterKey, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function renderHeaderFilter(filterKey: FilterKey | undefined) {
+    if (filterKey === "status") {
+      return (
+        <ColumnFilterPopover
+          allLabel="All statuses"
+          label="Filter by status"
+          onChange={(value) => updateFilter("status", value)}
+          options={statusOptions}
+          value={filters.status}
+        />
+      );
+    }
+
+    if (filterKey === "assignee") {
+      return (
+        <ColumnFilterPopover
+          allLabel="All assignees"
+          label="Filter by assignee"
+          onChange={(value) => updateFilter("assignee", value)}
+          options={assigneeOptions}
+          value={filters.assignee}
+        />
+      );
+    }
+
+    return null;
+  }
+
   return (
     <>
       <Table>
@@ -367,6 +572,7 @@ export default function TicketsTable({
             {SORTABLE_HEADERS.map((header) => (
               <SortHeader
                 className={header.className}
+                filter={renderHeaderFilter(header.filterKey)}
                 key={header.key}
                 label={header.label}
                 onSort={updateSort}

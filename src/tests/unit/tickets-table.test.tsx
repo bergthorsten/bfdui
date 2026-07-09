@@ -169,3 +169,22 @@ test("hides not deployed text while a deployment is active", () => {
   expect(screen.queryByText("not deployed")).not.toBeInTheDocument();
   expect(screen.getByText(DEPLOY_RUNNING_PATTERN)).toBeInTheDocument();
 });
+
+test("filters rows by status and assignee", async () => {
+  const user = userEvent.setup();
+  renderTable();
+
+  await user.click(screen.getByRole("button", { name: "Filter by status" }));
+  await user.click(screen.getByRole("button", { name: "Done" }));
+
+  expect(screen.getByText("Later ticket")).toBeInTheDocument();
+  expect(screen.queryByText("Checkout fixes")).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Filter by status" }));
+  await user.click(screen.getByRole("button", { name: "All statuses" }));
+  await user.click(screen.getByRole("button", { name: "Filter by assignee" }));
+  await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+
+  expect(screen.getByText("Checkout fixes")).toBeInTheDocument();
+  expect(screen.queryByText("Later ticket")).not.toBeInTheDocument();
+});
