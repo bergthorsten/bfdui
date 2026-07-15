@@ -49,13 +49,6 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -223,7 +216,7 @@ function ToggleLine({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+    <div className="flex items-center justify-between gap-3 border-border/70 border-b py-2 last:border-b-0">
       <Label className="min-w-0 truncate font-medium text-sm" htmlFor={id}>
         {label}
       </Label>
@@ -248,7 +241,7 @@ function TargetList({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-background">
-      <div className="grid grid-cols-[1.25rem_5rem_minmax(0,1fr)_5rem] gap-3 border-border border-b bg-muted/30 px-3 py-2 font-medium text-muted-foreground text-xs">
+      <div className="grid grid-cols-[1.25rem_5rem_minmax(0,1fr)_5rem] gap-3 border-border border-b bg-muted/30 px-3 py-1.5 font-medium text-muted-foreground text-xs">
         <span aria-hidden="true" />
         <span>System</span>
         <span>Current branch</span>
@@ -256,7 +249,7 @@ function TargetList({
       </div>
       <div
         aria-label="Target environment"
-        className="max-h-48 divide-y divide-border/70 overflow-y-auto"
+        className="max-h-44 divide-y divide-border/70 overflow-y-auto"
         role="listbox"
       >
         {targets.map((target) => {
@@ -265,7 +258,7 @@ function TargetList({
             <button
               aria-selected={selected}
               className={cn(
-                "grid h-12 w-full min-w-0 grid-cols-[1.25rem_5rem_minmax(0,1fr)_5rem] items-center gap-3 px-3 text-left transition-colors hover:bg-muted/40",
+                "grid h-9 w-full min-w-0 grid-cols-[1.25rem_5rem_minmax(0,1fr)_5rem] items-center gap-3 px-3 text-left transition-colors hover:bg-muted/40",
                 selected &&
                   "bg-sky-50/80 hover:bg-sky-50 dark:bg-sky-950/20 dark:hover:bg-sky-950/25"
               )}
@@ -277,8 +270,10 @@ function TargetList({
               <span className="flex justify-center text-sky-600 dark:text-sky-400">
                 {selected && <Check className="size-3.5" />}
               </span>
-              <span className="font-medium text-sm">{target.displayName}</span>
-              <span className="min-w-0 truncate text-muted-foreground text-sm">
+              <span className="truncate font-medium text-sm leading-tight">
+                {target.displayName}
+              </span>
+              <span className="min-w-0 truncate text-muted-foreground text-xs">
                 {target.branch}
               </span>
               <span
@@ -394,7 +389,7 @@ function WorkflowTargetSelector({
 
       {groups.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-border bg-background">
-          <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_minmax(9rem,14rem)] gap-3 border-border border-b bg-muted/30 px-3 py-2 font-medium text-muted-foreground text-xs">
+          <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_minmax(9rem,14rem)] gap-3 border-border border-b bg-muted/30 px-3 py-1.5 font-medium text-muted-foreground text-xs">
             <span aria-hidden="true" />
             <span>Workflow</span>
             <span>File</span>
@@ -410,7 +405,7 @@ function WorkflowTargetSelector({
                 className="border-border/70 border-b last:border-b-0"
                 key={group.group}
               >
-                <div className="bg-muted/15 px-3 py-1.5 font-medium text-[0.625rem] text-muted-foreground uppercase tracking-wide">
+                <div className="bg-muted/15 px-3 py-1 font-medium text-[0.625rem] text-muted-foreground uppercase tracking-wide">
                   {group.group}
                 </div>
                 <div className="divide-y divide-border/70">
@@ -425,7 +420,7 @@ function WorkflowTargetSelector({
                       <button
                         aria-selected={selected}
                         className={cn(
-                          "grid min-h-12 w-full min-w-0 grid-cols-[1.25rem_minmax(0,1fr)_minmax(9rem,14rem)] items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/40",
+                          "grid min-h-9 w-full min-w-0 grid-cols-[1.25rem_minmax(0,1fr)_minmax(9rem,14rem)] items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-muted/40",
                           selected &&
                             "bg-sky-50/80 hover:bg-sky-50 dark:bg-sky-950/20 dark:hover:bg-sky-950/25"
                         )}
@@ -438,7 +433,7 @@ function WorkflowTargetSelector({
                           {selected && <Check className="size-3.5" />}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate font-medium text-sm">
+                          <span className="block truncate font-medium text-sm leading-tight">
                             {label}
                           </span>
                         </span>
@@ -486,11 +481,9 @@ function WorkflowInputs({
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle>Workflow inputs</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-2 pt-0">
+    <section className="border-border border-t px-4 py-3">
+      <h3 className="mb-2 font-semibold text-sm">Workflow inputs</h3>
+      <div>
         {commonBooleanInputs.map((group) => {
           const { definition } = group;
           return (
@@ -514,8 +507,8 @@ function WorkflowInputs({
             value={inputValues[group.definition.name] ?? ""}
           />
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -546,7 +539,7 @@ function WorkflowInputControl({
   }
 
   return (
-    <div className="grid gap-1.5 rounded-md border border-border px-3 py-2">
+    <div className="grid gap-1 border-border/70 border-b py-2 last:border-b-0">
       <Label
         className="font-medium text-sm"
         htmlFor={inputDomId(rowKey, definition.name)}
@@ -599,10 +592,10 @@ function WorkflowSummary({
   const workflowLabel = workflows.length === 1 ? "workflow" : "workflows";
 
   return (
-    <Card>
-      <CardHeader className="gap-1 pb-3">
-        <CardTitle>Preflight</CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-x-1 gap-y-1">
+    <section className="px-4 py-3">
+      <div className="mb-2 grid gap-0.5">
+        <h3 className="font-semibold text-sm leading-tight">Preflight</h3>
+        <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-muted-foreground text-xs">
           Deploy <span className="font-medium text-foreground">{branch}</span>
           <span>to</span>
           <span className="rounded-md border border-yellow-300 bg-yellow-100 px-1.5 py-0.5 font-semibold text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-200">
@@ -612,36 +605,35 @@ function WorkflowSummary({
           <span className="font-medium text-foreground">
             {workflows.length || "no"} {workflowLabel}
           </span>
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 pt-0">
-        <pre className="whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-[0.6875rem] text-muted-foreground">
-          <code>
-            bfd d {workflowCommandValue} -r {branch} -e {environmentValue}
-          </code>
-        </pre>
+        </p>
+      </div>
 
-        {workflows.length === 0 ? (
-          <p className="text-muted-foreground text-xs">No workflow selected.</p>
-        ) : (
-          <ul className="grid gap-1.5">
-            {workflows.map((workflow) => (
-              <li
-                className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-2"
-                key={workflow.name}
-              >
-                <span className="truncate font-medium text-sm">
-                  {preferredWorkflowAlias(workflow)}
-                </span>
-                <span className="shrink-0 font-mono text-[0.625rem] text-muted-foreground">
-                  {workflow.fileName}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+      <pre className="mb-2 whitespace-pre-wrap break-all rounded-md bg-muted px-2.5 py-1.5 font-mono text-[0.625rem] text-muted-foreground">
+        <code>
+          bfd d {workflowCommandValue} -r {branch} -e {environmentValue}
+        </code>
+      </pre>
+
+      {workflows.length === 0 ? (
+        <p className="text-muted-foreground text-xs">No workflow selected.</p>
+      ) : (
+        <ul className="divide-y divide-border/70 border-border/70 border-t">
+          {workflows.map((workflow) => (
+            <li
+              className="flex min-w-0 items-center justify-between gap-2 py-1.5 text-sm"
+              key={workflow.name}
+            >
+              <span className="truncate font-medium">
+                {preferredWorkflowAlias(workflow)}
+              </span>
+              <span className="shrink-0 font-mono text-[0.625rem] text-muted-foreground">
+                {workflow.fileName}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -680,22 +672,24 @@ function DeploymentProgress({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 pb-3">
-        <div className="grid gap-1">
-          <CardTitle>Deployment run</CardTitle>
-          <CardDescription>
+    <section className="border-border border-t px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="grid gap-0.5">
+          <h3 className="font-semibold text-sm leading-tight">
+            Deployment run
+          </h3>
+          <p className="text-muted-foreground text-xs">
             {pollingStatusLabel(isFetching, dataUpdatedAt)}
-          </CardDescription>
+          </p>
         </div>
         <Badge variant={deploymentStateTone(batch.aggregateState)}>
           {deploymentStateLabel(batch.aggregateState)}
         </Badge>
-      </CardHeader>
-      <CardContent className="grid gap-1.5 pt-0">
+      </div>
+      <div className="divide-y divide-border/70 border-border/70 border-t">
         {batch.workflows.map((workflow) => (
           <div
-            className="grid gap-0.5 rounded-md border border-border bg-background px-2.5 py-2"
+            className="grid gap-0.5 py-2"
             key={`${workflow.targetName}-${workflow.environment}`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -728,8 +722,8 @@ function DeploymentProgress({
             )}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -895,6 +889,9 @@ export default function DeploymentDialog({
     },
   });
   const warning = targetWarning(selectedTarget);
+  const hasDeploymentFeedback =
+    !createDeploymentMutation.isPending &&
+    Boolean(createDeploymentMutation.error || deploymentBatchQuery.data);
   const selectedPr = row.pullRequests.find((pr) => pr.headRef === branch);
   const environmentValue = selectedTarget?.cliValue ?? environment;
   const headerMeta = [
@@ -1043,7 +1040,7 @@ export default function DeploymentDialog({
             />
           </section>
 
-          <aside className="grid min-w-0 content-start gap-3">
+          <aside className="min-w-0 overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm">
             <WorkflowSummary
               branch={branch}
               environment={selectedTarget}
@@ -1057,12 +1054,6 @@ export default function DeploymentDialog({
               rowKey={row.ticket.key}
             />
 
-            <DeploymentFeedback
-              batch={deploymentBatchQuery.data}
-              createError={createDeploymentMutation.error}
-              isCreating={createDeploymentMutation.isPending}
-            />
-
             <DeploymentProgress
               batch={deploymentBatchQuery.data}
               dataUpdatedAt={deploymentBatchQuery.dataUpdatedAt}
@@ -1072,10 +1063,22 @@ export default function DeploymentDialog({
             />
 
             {warning && (
-              <Alert className="grid gap-0.5 text-xs" variant="warning">
-                <span className="font-medium">{warning.title}</span>
-                <span className="leading-relaxed">{warning.body}</span>
-              </Alert>
+              <div className="border-border border-t px-4 py-3">
+                <Alert className="grid gap-0.5 text-xs" variant="warning">
+                  <span className="font-medium">{warning.title}</span>
+                  <span className="leading-relaxed">{warning.body}</span>
+                </Alert>
+              </div>
+            )}
+
+            {hasDeploymentFeedback && (
+              <div className="border-border border-t px-4 py-3">
+                <DeploymentFeedback
+                  batch={deploymentBatchQuery.data}
+                  createError={createDeploymentMutation.error}
+                  isCreating={createDeploymentMutation.isPending}
+                />
+              </div>
             )}
           </aside>
         </div>
