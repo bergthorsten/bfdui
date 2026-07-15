@@ -14,7 +14,11 @@ const mocks = vi.hoisted(() => {
     setSecret: vi.fn(),
     update: vi.fn(),
   };
-  const argo = { getDevDeployments: vi.fn(), testConnection: vi.fn() };
+  const argo = {
+    getDevDeployments: vi.fn(),
+    setDevAutoSync: vi.fn(),
+    testConnection: vi.fn(),
+  };
   const github = {
     completeDevelopmentInfo: vi.fn(),
     testConnection: vi.fn(),
@@ -82,6 +86,7 @@ import {
   getDeploymentBatches,
   getTicketDevelopment,
   saveConfig,
+  setArgoAutoSync,
   testConnection,
 } from "@/ipc/bfd/handlers";
 import { JiraCloudService } from "@/services/jira";
@@ -203,6 +208,20 @@ describe("BFD IPC handlers", () => {
       "PC-123",
       jiraDevelopment
     );
+  });
+
+  test("forwards Argo auto sync updates", async () => {
+    mocks.argo.setDevAutoSync.mockResolvedValue({
+      autoSync: "off",
+      environment: "04",
+      message: "Auto sync disabled for dev-04.",
+    });
+
+    await expect(
+      callProcedure(setArgoAutoSync, { enabled: false, environment: "04" })
+    ).resolves.toMatchObject({ autoSync: "off", environment: "04" });
+
+    expect(mocks.argo.setDevAutoSync).toHaveBeenCalledWith("04", false);
   });
 
   test("throttles active deployment batch refreshes", async () => {

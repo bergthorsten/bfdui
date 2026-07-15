@@ -1,8 +1,13 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RefreshCw, Search } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { getBfdConfig, getDevDeployments, searchTickets } from "@/actions/bfd";
+import {
+  getBfdConfig,
+  getDevDeployments,
+  searchTickets,
+  setArgoAutoSync,
+} from "@/actions/bfd";
 import DevSystemsTable from "@/components/dev-systems-table";
 import PageHeader from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,7 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_GITHUB_REPO } from "@/domain/urls";
 import { dashboardUpdatedLabel } from "@/lib/dashboard-helpers";
-import type { JiraTicket } from "@/types/bfd";
+import type { DevDeployment, JiraTicket } from "@/types/bfd";
 import { cn } from "@/utils/tailwind";
 
 type Filter = "all" | "free" | "occupied";
@@ -63,6 +68,7 @@ function DevSystems() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [now, setNow] = useState(() => Date.now());
+  const [autoSyncNotice, setAutoSyncNotice] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
   const searchRef = useRef<HTMLInputElement>(null);
   const deploymentsQuery = useQuery({
@@ -75,6 +81,14 @@ function DevSystems() {
     queryKey: ["bfd", "config"],
     queryFn: getBfdConfig,
     retry: false,
+  });
+  const autoSyncMutation = useMutation({
+    mutationFn: setArgoAutoSync,
+    onMutate: () => setAutoSyncNotice(null),
+    onSuccess: async (result) => {
+      setAutoSyncNotice(result.message);
+      await deploymentsQuery.refetch();
+    },
   });
   const deployments = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
@@ -162,10 +176,18 @@ function DevSystems() {
   }, []);
 
   function refreshSystems() {
+    setAutoSyncNotice(null);
     deploymentsQuery.refetch();
     for (const queryResult of ticketQueries) {
       queryResult.refetch();
     }
+  }
+
+  function updateAutoSync(deployment: DevDeployment, enabled: boolean) {
+    autoSyncMutation.mutate({
+      enabled,
+      environment: deployment.environment,
+    });
   }
 
   const filters: { key: Filter; label: string }[] = [
@@ -232,11 +254,31 @@ function DevSystems() {
             </Alert>
           )}
 
+          {autoSyncMutation.error && (
+            <Alert variant="danger">
+              <AlertDescription>
+                {messageOf(autoSyncMutation.error)}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {autoSyncNotice && (
+            <Alert variant="success">
+              <AlertDescription>{autoSyncNotice}</AlertDescription>
+            </Alert>
+          )}
+
           <Card className="overflow-hidden">
             <DevSystemsTable
+              autoSyncUpdatingEnvironment={
+                autoSyncMutation.isPending
+                  ? autoSyncMutation.variables.environment
+                  : undefined
+              }
               deployments={deployments}
               github={configQuery.data?.config.github ?? DEFAULT_GITHUB_REPO}
               jiraBaseUrl={configQuery.data?.config.jira.baseUrl}
+              onAutoSyncChange={updateAutoSync}
               ticketsByKey={ticketsByKey}
             />
           </Card>

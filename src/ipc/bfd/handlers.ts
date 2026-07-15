@@ -29,6 +29,7 @@ import {
   recordWorkflowTargetUsageInputSchema,
   saveConfigInputSchema,
   searchTicketsInputSchema,
+  setArgoAutoSyncInputSchema,
   testConnectionInputSchema,
 } from "./schemas";
 
@@ -121,6 +122,12 @@ export const getTicketDevelopment = os
   });
 
 export const getDevDeployments = os.handler(() => argo.getDevDeployments());
+
+export const setArgoAutoSync = os
+  .input(setArgoAutoSyncInputSchema)
+  .handler(({ input }) =>
+    argo.setDevAutoSync(input.environment, input.enabled)
+  );
 
 export const getWorkflowTargets = os.handler(() => workflows.discoverTargets());
 

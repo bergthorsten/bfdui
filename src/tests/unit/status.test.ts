@@ -24,7 +24,8 @@ describe("status helpers", () => {
     expect(syncVariant("OutOfSync")).toBe("warning");
     expect(healthVariant("Degraded")).toBe("danger");
     expect(autoSyncVariant("No prune")).toBe("info");
-    expect(autoSyncLabel("off")).toBe("Manual");
+    expect(autoSyncVariant("off")).toBe("danger");
+    expect(autoSyncLabel("off")).toBe("Auto sync off");
   });
 
   test("formats ages and initials", () => {

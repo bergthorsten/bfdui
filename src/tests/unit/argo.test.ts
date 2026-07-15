@@ -82,6 +82,48 @@ describe("ArgoService", () => {
     ]);
   });
 
+  test("sets dev auto sync through the bfd argo command", async () => {
+    execCliMock.mockResolvedValueOnce({
+      stdout: "Auto sync change completed.",
+      stderr: "",
+    });
+
+    await expect(
+      new ArgoService(configService()).setDevAutoSync("04", false)
+    ).resolves.toMatchObject({
+      autoSync: "off",
+      environment: "04",
+      message: "Auto sync disabled for dev-04.",
+    });
+
+    expect(execCliMock).toHaveBeenCalledWith(
+      "bfd",
+      ["argo", "--auto-sync", "off", "-e", "04", "--deployment", "shop"],
+      { timeout: 60_000 }
+    );
+  });
+
+  test("falls back to shop when setting auto sync without a configured app", async () => {
+    execCliMock.mockResolvedValueOnce({ stdout: "", stderr: "" });
+
+    await new ArgoService(
+      configService({
+        ...APP_CONFIG,
+        argo: { app: " ", argocdNamespace: "argocd", devContext: "dev" },
+      })
+    ).setDevAutoSync("04", true);
+
+    expect(execCliMock.mock.calls[0][1]).toEqual([
+      "argo",
+      "--auto-sync",
+      "on",
+      "-e",
+      "04",
+      "--deployment",
+      "shop",
+    ]);
+  });
+
   test("rejects invalid and non-list kubectl JSON responses", async () => {
     const service = new ArgoService(configService());
 

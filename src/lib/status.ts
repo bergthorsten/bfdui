@@ -108,7 +108,7 @@ export function autoSyncVariant(auto: ArgoAutoSync): BadgeVariant {
   if (auto === "No prune") {
     return "info";
   }
-  return "muted";
+  return "danger";
 }
 
 export function autoSyncLabel(auto: ArgoAutoSync): string {
@@ -118,7 +118,7 @@ export function autoSyncLabel(auto: ArgoAutoSync): string {
   if (auto === "No prune") {
     return "No prune";
   }
-  return "Manual";
+  return "Auto sync off";
 }
 
 /** Compact, CLI-like age string (e.g. "2d 4h", "37m"). */

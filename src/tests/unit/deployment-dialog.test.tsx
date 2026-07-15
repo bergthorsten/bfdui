@@ -23,6 +23,7 @@ const PERFORM_TESTS_SWITCH_PATTERN = /perform tests/i;
 const OCCUPIED_WARNING_PATTERN = /Current branch: PC-999-owned-system/;
 const RESERVED_WARNING_PATTERN = /dev-20 is reserved in BFD/;
 const STAGING_WARNING_PATTERN = /Staging is shared/;
+const AUTO_SYNC_WARNING_PATTERN = /Argo will not auto-sync/;
 
 vi.mock("@/actions/bfd", () => ({
   createDeployment: vi.fn(),
@@ -144,7 +145,11 @@ const failedBatch: DeploymentBatch = {
 };
 
 function renderDialog(
-  options: { deployments?: DevDeployment[]; row?: TicketDeploymentRow } = {}
+  options: {
+    deployments?: DevDeployment[];
+    onSuccess?: (batch: DeploymentBatch) => void;
+    row?: TicketDeploymentRow;
+  } = {}
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -154,6 +159,7 @@ function renderDialog(
       <DeploymentDialog
         deployments={options.deployments ?? deployments}
         onOpenChange={vi.fn()}
+        onSuccess={options.onSuccess}
         open={true}
         row={options.row ?? row}
       />
@@ -204,7 +210,8 @@ afterEach(() => {
 
 test("selects multiple workflow targets, sends parsed inputs, and shows run link", async () => {
   const user = userEvent.setup();
-  renderDialog();
+  const onSuccess = vi.fn();
+  renderDialog({ onSuccess });
 
   expect(await screen.findByText("shop -> app-shop")).toBeInTheDocument();
   expect(screen.getByText("1 selected")).toBeInTheDocument();
@@ -220,6 +227,7 @@ test("selects multiple workflow targets, sends parsed inputs, and shows run link
   await waitFor(() => {
     expect(createDeployment).toHaveBeenCalled();
   });
+  expect(onSuccess).toHaveBeenCalledWith(failedBatch);
   expect(vi.mocked(createDeployment).mock.calls[0]?.[0]).toEqual({
     branch: "PC-123-shop",
     environment: "04",
@@ -267,7 +275,7 @@ test("prioritizes free targets and shows selected target warnings", async () => 
       {
         ageSeconds: 300,
         app: "shop",
-        autoSync: "off",
+        autoSync: "on",
         branch: "PC-999-owned-system",
         deployedAt: "2026-06-18T09:55:00.000Z",
         environment: "01",
@@ -299,6 +307,8 @@ test("prioritizes free targets and shows selected target warnings", async () => 
   ).getAllByRole("option");
   expect(targetOptions[0]).toHaveTextContent("dev-04");
   expect(targetOptions[0]).toHaveTextContent("free");
+  expect(screen.getByText("Auto sync is off")).toBeInTheDocument();
+  expect(screen.getByText(AUTO_SYNC_WARNING_PATTERN)).toBeInTheDocument();
 
   await user.click(screen.getByText("dev-01"));
   expect(screen.getByText("System is not free")).toBeInTheDocument();

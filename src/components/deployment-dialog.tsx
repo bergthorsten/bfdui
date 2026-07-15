@@ -85,6 +85,7 @@ const COMMON_BOOLEAN_INPUT_NAMES = ["PERFORM_TESTS", "FORCE_IMAGE_REBUILD"];
 interface DeploymentDialogProps {
   deployments: DevDeployment[];
   onOpenChange: (open: boolean) => void;
+  onSuccess?: (batch: DeploymentBatch) => void;
   open: boolean;
   row: TicketDeploymentRow;
 }
@@ -806,8 +807,9 @@ function DeploymentFeedback({
 
 export default function DeploymentDialog({
   deployments,
-  open,
   onOpenChange,
+  onSuccess,
+  open,
   row,
 }: DeploymentDialogProps) {
   const queryClient = useQueryClient();
@@ -880,6 +882,7 @@ export default function DeploymentDialog({
   const createDeploymentMutation = useMutation({
     mutationFn: createDeployment,
     onSuccess: (batch) => {
+      onSuccess?.(batch);
       setDeploymentBatchId(batch.id);
       queryClient.setQueryData(["bfd", "deployment", batch.id], batch);
       queryClient.setQueryData<DeploymentBatch[]>(
@@ -934,6 +937,21 @@ export default function DeploymentDialog({
       setEnvironment(targets[0]?.environment ?? "01");
     }
   }, [environment, targets]);
+
+  useEffect(() => {
+    const batch = deploymentBatchQuery.data;
+    if (!batch) {
+      return;
+    }
+
+    queryClient.setQueryData<DeploymentBatch[]>(
+      ["bfd", "deployments"],
+      (current) => [
+        batch,
+        ...(current ?? []).filter((candidate) => candidate.id !== batch.id),
+      ]
+    );
+  }, [deploymentBatchQuery.data, queryClient]);
 
   function toggleWorkflowTarget(name: string) {
     setSelectedWorkflowNames((current) => {

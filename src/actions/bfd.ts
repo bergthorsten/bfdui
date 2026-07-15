@@ -1,6 +1,7 @@
 import { ipc } from "@/ipc/manager";
 import type {
   AppConfig,
+  ArgoAutoSyncUpdateInput,
   DeploymentIntentInput,
   SaveConfigResult,
   WorkflowTargetUsageInput,
@@ -24,6 +25,10 @@ export function getActiveSprint() {
 
 export function getDevDeployments() {
   return ipc.client.bfd.getDevDeployments();
+}
+
+export function setArgoAutoSync(input: ArgoAutoSyncUpdateInput) {
+  return ipc.client.bfd.setArgoAutoSync(input);
 }
 
 export function getWorkflowTargets() {

@@ -351,6 +351,12 @@ export function targetWarning(target: TargetEnvironment | undefined) {
   if (!target) {
     return null;
   }
+  if (target.deployment?.autoSync === "off") {
+    return {
+      title: "Auto sync is off",
+      body: `${target.displayName} has Argo auto sync disabled. This can be intentional before env or variable changes, but Argo will not auto-sync until you turn it on again. Double-check before deploying here.`,
+    };
+  }
   if (target.kind === "staging") {
     return {
       title: "Staging target",

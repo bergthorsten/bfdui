@@ -3,6 +3,7 @@ import { execCli } from "@/services/cli";
 import type { ConfigService } from "@/services/config";
 import type {
   ArgoAutoSync,
+  ArgoAutoSyncUpdateResult,
   ConnectionResult,
   DevDeployment,
 } from "@/types/bfd";
@@ -90,6 +91,40 @@ export class ArgoService {
   async getDevDeployments(): Promise<DevDeployment[]> {
     const apps = await this.fetchApplications();
     return parseArgoApplications(apps, this.config.get().argo.app);
+  }
+
+  async setDevAutoSync(
+    environment: string,
+    enabled: boolean
+  ): Promise<ArgoAutoSyncUpdateResult> {
+    const app = this.config.get().argo.app.trim() || "shop";
+    const autoSync = enabled ? "on" : "off";
+    const args = [
+      "argo",
+      "--auto-sync",
+      autoSync,
+      "-e",
+      environment,
+      "--deployment",
+      app,
+    ];
+
+    try {
+      const { stderr, stdout } = await execCli("bfd", args, {
+        timeout: 60_000,
+      });
+      return {
+        autoSync,
+        environment,
+        message: `Auto sync ${enabled ? "enabled" : "disabled"} for dev-${environment}.`,
+        output: firstMeaningfulLine(stdout || stderr),
+      };
+    } catch (error) {
+      throw new ArgoServiceError({
+        detail: developerHintForBfd(args, outputOf(error) ?? undefined),
+        message: `Could not ${enabled ? "enable" : "disable"} auto sync for dev-${environment}: ${messageOf(error)}`,
+      });
+    }
   }
 
   private async fetchApplications(): Promise<unknown[]> {
@@ -319,6 +354,14 @@ function developerHint(
     hints.push(`Output: ${firstMeaningfulLine(output)}`);
   }
   return hints.join(" | ");
+}
+
+function developerHintForBfd(args: string[], output?: string): string {
+  const hints = [`Command: bfd ${args.join(" ")}`];
+  if (output) {
+    hints.push(`Output: ${firstMeaningfulLine(output)}`);
+  }
+  return hints.join("\n");
 }
 
 function outputOf(error: unknown): string | null {

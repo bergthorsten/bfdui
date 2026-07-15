@@ -3,13 +3,21 @@ import {
   ArrowUp,
   ArrowUpDown,
   Check,
+  CircleCheck,
   ExternalLink,
   Filter,
   Loader2,
   Rocket,
   TriangleAlert,
+  X,
 } from "lucide-react";
-import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { openExternalLink } from "@/actions/shell";
 import DeploymentDialog from "@/components/deployment-dialog";
 import { JiraStatusBadge, PullRequestBadge } from "@/components/status-badges";
@@ -464,6 +472,8 @@ export default function TicketsTable({
   rows: TicketDeploymentRow[];
 }) {
   const [deployRow, setDeployRow] = useState<TicketDeploymentRow | null>(null);
+  const [deploymentSuccess, setDeploymentSuccess] =
+    useState<DeploymentBatch | null>(null);
   const [sort, setSort] = useState<SortState>({
     key: "ticket",
     direction: "asc",
@@ -535,6 +545,14 @@ export default function TicketsTable({
   function updateFilter(key: FilterKey, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
+
+  useEffect(() => {
+    if (!deploymentSuccess) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setDeploymentSuccess(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [deploymentSuccess]);
 
   function renderHeaderFilter(filterKey: FilterKey | undefined) {
     if (filterKey === "status") {
@@ -780,9 +798,39 @@ export default function TicketsTable({
               setDeployRow(null);
             }
           }}
+          onSuccess={(batch) => {
+            setDeployRow(null);
+            setDeploymentSuccess(batch);
+          }}
           open={true}
           row={deployRow}
         />
+      )}
+      {deploymentSuccess && (
+        <div
+          aria-live="polite"
+          className="fixed right-4 bottom-4 z-50 max-w-sm transition-all duration-300 ease-out"
+          role="status"
+        >
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-700 text-sm shadow-lg dark:text-emerald-300">
+            <CircleCheck className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">Deployment started</p>
+              <p className="truncate text-xs">
+                {deploymentSuccess.ticketKey} dispatched to dev-
+                {deploymentSuccess.environment}
+              </p>
+            </div>
+            <button
+              aria-label="Dismiss deployment confirmation"
+              className="shrink-0 rounded p-0.5 text-emerald-700/70 transition-colors hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-300/70 dark:hover:text-emerald-300"
+              onClick={() => setDeploymentSuccess(null)}
+              type="button"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

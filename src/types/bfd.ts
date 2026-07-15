@@ -46,6 +46,18 @@ export interface DevDeployment {
   ticketKey: string | null;
 }
 
+export interface ArgoAutoSyncUpdateInput {
+  enabled: boolean;
+  environment: string;
+}
+
+export interface ArgoAutoSyncUpdateResult {
+  autoSync: ArgoAutoSync;
+  environment: string;
+  message: string;
+  output?: string;
+}
+
 export interface JiraTicket {
   assignee: string | null;
   assigneeAvatar: string | null;

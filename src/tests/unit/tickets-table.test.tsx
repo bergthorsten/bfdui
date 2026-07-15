@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { openExternalLink } from "@/actions/shell";
@@ -9,10 +9,32 @@ vi.mock("@/actions/shell", () => ({
   openExternalLink: vi.fn(),
 }));
 
+function DeploymentDialog({
+  onSuccess,
+  open,
+}: {
+  onSuccess?: (batch: DeploymentBatch) => void;
+  open?: boolean;
+}) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <button
+      data-testid="deployment-dialog"
+      onClick={() => onSuccess?.(deploymentBatch)}
+      type="button"
+    >
+      Confirm deploy
+    </button>
+  );
+}
+
 vi.mock("@/components/deployment-dialog", () => ({
-  default: () => <div data-testid="deployment-dialog" />,
+  default: DeploymentDialog,
 }));
 
+const DEPLOY_BUTTON_PATTERN = /^Deploy$/i;
 const DEPLOY_RUNNING_PATTERN = /deploy running/i;
 const TICKET_HEADER_PATTERN = /ticket/i;
 
@@ -187,4 +209,37 @@ test("filters rows by status and assignee", async () => {
 
   expect(screen.getByText("Checkout fixes")).toBeInTheDocument();
   expect(screen.queryByText("Later ticket")).not.toBeInTheDocument();
+});
+
+test("closes deploy dialog and shows a success toast after a deployment is dispatched", async () => {
+  const user = userEvent.setup();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  renderTable();
+
+  const checkoutRow = screen.getByText("Checkout fixes").closest("tr");
+  if (!checkoutRow) {
+    throw new Error("Checkout row not found");
+  }
+  await user.click(
+    within(checkoutRow).getByRole("button", { name: DEPLOY_BUTTON_PATTERN })
+  );
+  expect(screen.getByTestId("deployment-dialog")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Confirm deploy" }));
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("deployment-dialog")).not.toBeInTheDocument();
+  });
+  const toast = screen.getByRole("status");
+  expect(toast).toHaveTextContent("Deployment started");
+  expect(toast).toHaveTextContent("PC-2 dispatched to dev-04");
+
+  act(() => {
+    vi.advanceTimersByTime(4000);
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  vi.useRealTimers();
 });

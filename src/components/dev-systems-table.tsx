@@ -16,6 +16,7 @@ import {
   SyncBadge,
 } from "@/components/status-badges";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -43,6 +44,11 @@ interface SortState {
   key: SortKey;
 }
 
+interface PendingAutoSyncChange {
+  enabled: boolean;
+  environment: string;
+}
+
 const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
   [
     { key: "system", label: "System" },
@@ -51,9 +57,11 @@ const SORTABLE_HEADERS: { className?: string; key: SortKey; label: string }[] =
   ];
 
 interface Props {
+  autoSyncUpdatingEnvironment?: string;
   deployments: DevDeployment[];
   github: GithubRepoRef;
   jiraBaseUrl?: string;
+  onAutoSyncChange?: (deployment: DevDeployment, enabled: boolean) => void;
   ticketsByKey?: Map<string, JiraTicket>;
 }
 
@@ -188,15 +196,19 @@ function DeploymentJiraStatus({
 }
 
 export default function DevSystemsTable({
+  autoSyncUpdatingEnvironment,
   deployments,
   github,
   jiraBaseUrl,
+  onAutoSyncChange,
   ticketsByKey,
 }: Props) {
   const [sort, setSort] = useState<SortState>({
     key: "system",
     direction: "asc",
   });
+  const [pendingAutoSyncChange, setPendingAutoSyncChange] =
+    useState<PendingAutoSyncChange | null>(null);
   const sortedDeployments = useMemo(
     () =>
       deployments.toSorted((a, b) => {
@@ -260,9 +272,19 @@ export default function DevSystemsTable({
           const ticketUrl =
             ticket?.url ?? jiraTicketUrl(jiraBaseUrl, d.ticketKey);
           const branch = d.branch;
+          const isAutoSyncUpdating =
+            autoSyncUpdatingEnvironment === d.environment;
+          const nextAutoSyncLabel = d.autoSync === "off" ? "enable" : "disable";
+          const pendingChange =
+            pendingAutoSyncChange?.environment === d.environment
+              ? pendingAutoSyncChange
+              : null;
           return (
             <TableRow
-              className={cn(d.reserved && "bg-amber-500/[0.04]")}
+              className={cn(
+                d.reserved && "bg-amber-500/[0.04]",
+                d.autoSync === "off" && "bg-red-500/[0.035]"
+              )}
               key={d.environment}
             >
               <TableCell>
@@ -321,7 +343,42 @@ export default function DevSystemsTable({
                 {formatAge(d.ageSeconds)}
               </TableCell>
               <TableCell>
-                <AutoSyncBadge autoSync={d.autoSync} />
+                <div className="flex items-center gap-2">
+                  <Switch
+                    aria-label={`Auto sync for dev-${d.environment}`}
+                    checked={d.autoSync !== "off"}
+                    disabled={!onAutoSyncChange || isAutoSyncUpdating}
+                    onCheckedChange={(checked) =>
+                      setPendingAutoSyncChange({
+                        enabled: checked,
+                        environment: d.environment,
+                      })
+                    }
+                  />
+                  <AutoSyncBadge autoSync={d.autoSync} />
+                </div>
+                {pendingChange && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+                    <span>Really {nextAutoSyncLabel}?</span>
+                    <Button
+                      onClick={() => {
+                        onAutoSyncChange?.(d, pendingChange.enabled);
+                        setPendingAutoSyncChange(null);
+                      }}
+                      size="xs"
+                      variant="destructive"
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      onClick={() => setPendingAutoSyncChange(null)}
+                      size="xs"
+                      variant="ghost"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </TableCell>
 
               <TableCell>

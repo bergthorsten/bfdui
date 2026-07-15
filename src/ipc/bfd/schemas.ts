@@ -37,6 +37,11 @@ export const searchTicketsInputSchema = z.object({
   query: z.string().trim().min(2),
 });
 
+export const setArgoAutoSyncInputSchema = z.object({
+  enabled: z.boolean(),
+  environment: z.string().trim().min(1),
+});
+
 export const getTicketDevelopmentInputSchema = z.object({
   issueId: z.string().trim().min(1),
   ticketKey: z.string().trim().min(1),

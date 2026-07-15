@@ -14,6 +14,7 @@ import {
   refreshDeploymentBatch,
   saveConfig,
   searchTickets,
+  setArgoAutoSync,
   testConnection,
 } from "./handlers";
 
@@ -33,5 +34,6 @@ export const bfd = {
   refreshDeploymentBatch,
   saveConfig,
   searchTickets,
+  setArgoAutoSync,
   testConnection,
 };

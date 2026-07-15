@@ -1,25 +1,37 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType, ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
+  createDeployment,
   getActiveSprint,
   getBfdConfig,
   getDeploymentBatches,
   getDevDeployments,
   getSprintTickets,
   getTicketDevelopment,
+  getWorkflowTargets,
+  refreshDeploymentBatch,
   searchTickets,
 } from "@/actions/bfd";
 import { openExternalLink } from "@/actions/shell";
+import DeploymentDialog from "@/components/deployment-dialog";
 import { Route } from "@/routes/index";
 import type {
   AppConfig,
+  DeploymentBatch,
   JiraDevelopmentInfo,
   JiraSprint,
   JiraTicket,
   PullRequestSummary,
+  TicketDeploymentRow,
 } from "@/types/bfd";
 
 vi.mock("@tanstack/react-router", async () => {
@@ -78,6 +90,8 @@ const ARGO_ERROR_PATTERN = /Dev-system state could not be loaded from ArgoCD/;
 const LIVE_JIRA_ERROR_PATTERN = /Jira tickets could not be loaded: Bad JQL/;
 const PREVIEW_JIRA_ERROR_PATTERN =
   /Jira tickets could not be loaded before setup is complete: Missing Jira token\. Showing preview data\./;
+const APP_SHOP_PATTERN = /app-shop/;
+const DEPLOY_BUTTON_NAME_PATTERN = /^Deploy$/;
 const PR_BRANCH = "PC-102-pricing-work";
 
 function ticket(
@@ -182,6 +196,45 @@ function renderDashboard(config: AppConfig = baseConfig) {
       <Dashboard />
     </QueryClientProvider>
   );
+}
+
+function deploymentBatch(
+  state: DeploymentBatch["aggregateState"]
+): DeploymentBatch {
+  return {
+    aggregateState: state,
+    branch: "PC-101-branch",
+    createdAt: Date.parse("2026-06-18T10:00:00.000Z"),
+    environment: "04",
+    id: "batch-1",
+    ticketKey: "PC-101",
+    updatedAt: Date.parse("2026-06-18T10:02:00.000Z"),
+    workflows: [
+      {
+        dispatchRequestedAt: Date.parse("2026-06-18T10:00:00.000Z"),
+        environment: "04",
+        fileName: "app-shop.yml",
+        inputs: { ENVIRONMENT: "04" },
+        runId: state === "success" ? 987 : undefined,
+        runUrl:
+          state === "success"
+            ? "https://github.example/actions/runs/987"
+            : undefined,
+        state,
+        targetName: "app-shop",
+        workflowPath: ".github/workflows/app-shop.yml",
+      },
+    ],
+  };
+}
+
+function deploymentRow(): TicketDeploymentRow {
+  return {
+    branches: [{ headSha: "abc123", name: "PC-101-branch", source: "jira" }],
+    deployments: [],
+    ticket: ticket("PC-101", "No development yet"),
+    pullRequests: [],
+  };
 }
 
 beforeEach(() => {
@@ -307,6 +360,69 @@ test("filters loaded sprint rows locally and only uses global Jira search after 
   expect(
     screen.getByText("1 Jira result outside the loaded sprint result set.")
   ).toBeInTheDocument();
+});
+
+test("syncs deployment history cache when deployment query updates", async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const started = deploymentBatch("queued");
+  const finished = deploymentBatch("success");
+  vi.mocked(getWorkflowTargets).mockResolvedValue({
+    repoPath: "/tmp/shop",
+    targets: [
+      {
+        affectedPathGlobs: [],
+        aliases: ["shop"],
+        fileName: "app-shop.yml",
+        group: "app",
+        inputs: [],
+        name: "app-shop",
+        path: ".github/workflows/app-shop.yml",
+        usage: null,
+      },
+    ],
+    warnings: [],
+    workflowsPath: "/tmp/shop/.github/workflows",
+  });
+  vi.mocked(createDeployment).mockResolvedValue(started);
+  vi.mocked(refreshDeploymentBatch).mockResolvedValue(finished);
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <DeploymentDialog
+        deployments={[]}
+        onOpenChange={vi.fn()}
+        open={true}
+        row={deploymentRow()}
+      />
+    </QueryClientProvider>
+  );
+
+  expect(await screen.findAllByText(APP_SHOP_PATTERN)).not.toHaveLength(0);
+  await waitFor(() => {
+    expect(
+      screen.getByRole("button", { name: DEPLOY_BUTTON_NAME_PATTERN })
+    ).toBeEnabled();
+  });
+
+  fireEvent.click(
+    screen.getByRole("button", { name: DEPLOY_BUTTON_NAME_PATTERN })
+  );
+
+  await waitFor(() => {
+    expect(createDeployment).toHaveBeenCalled();
+  });
+
+  act(() => {
+    queryClient.setQueryData(["bfd", "deployment", "batch-1"], finished);
+  });
+
+  await waitFor(() => {
+    expect(
+      queryClient.getQueryData<DeploymentBatch[]>(["bfd", "deployments"])
+    ).toEqual([finished]);
+  });
 });
 
 test("shows preview data only before onboarding when Jira fails", async () => {
